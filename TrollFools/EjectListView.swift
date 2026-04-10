@@ -667,3 +667,4 @@ private struct CompressedFileRepresentation: Transferable {
             return SentTransferredFile(zipURL)
         }
     }
+}
