@@ -7,7 +7,7 @@
 
 import Combine
 import Foundation
-import MobileCoreServices   // 添加导入，用于 LSApplicationProxy
+import MobileCoreServices   // 必须导入
 
 final class App: ObservableObject {
     let bid: String
@@ -32,16 +32,18 @@ final class App: ObservableObject {
     lazy var isFromTroll: Bool = isSystem && !isFromApple
     lazy var isRemovable: Bool = url.path.contains("/var/containers/Bundle/Application/")
 
-    // 新增：数据目录（Documents 的上级目录）
+    // 数据目录（需要调用方法）
     lazy var dataContainerURL: URL? = {
         guard let proxy = LSApplicationProxy(forIdentifier: bid) else { return nil }
-        return proxy.dataContainerURL
+        // dataContainerURL 是无参方法
+        return proxy.dataContainerURL?()
     }()
 
-    // 新增：应用组目录（第一个共享容器）
+    // 应用组目录（取第一个）
     lazy var appGroupContainerURL: URL? = {
         guard let proxy = LSApplicationProxy(forIdentifier: bid) else { return nil }
-        if let groupURLs = proxy.groupContainerURLs as? [URL], let first = groupURLs.first {
+        // groupContainerURLs 返回 [String: URL]?，取 values 的第一个
+        if let groupDict = proxy.groupContainerURLs?() as? [String: URL], let first = groupDict.values.first {
             return first
         }
         return nil
