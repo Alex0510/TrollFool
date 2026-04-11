@@ -87,15 +87,12 @@ struct AppListView: View {
                 }
                 .alert(isPresented: .constant(batchResultMessage != nil)) {
                     Alert(
-                        title: Text("批量操作"),
+                        title: Text(NSLocalizedString("Batch Operation", comment: "")),
                         message: Text(batchResultMessage ?? ""),
-                        dismissButton: .default(Text("确定")) {
+                        dismissButton: .default(Text(NSLocalizedString("OK", comment: ""))) {
                             batchResultMessage = nil
                         }
                     )
-                }
-                .sheet(isPresented: $showingUnsupportedApps) {
-                    UnsupportedAppsView(unsupportedApps: appList.unsupportedApps)
                 }
         } else {
             content
@@ -108,6 +105,9 @@ struct AppListView: View {
             .sheet(item: $selectorOpenedURL) { urlWrapper in
                 AppListView()
                     .environmentObject(AppListModel(selectorURL: urlWrapper.url))
+            }
+            .sheet(isPresented: $showingUnsupportedApps) {
+                UnsupportedAppsView(unsupportedApps: appList.unsupportedApps)
             }
             .onOpenURL { url in
                 let ext = url.pathExtension.lowercased()
@@ -284,17 +284,17 @@ struct AppListView: View {
                 }
             }
 
-            // 批量操作菜单（中文显示）
+            // 批量操作菜单（语言自适应）
             ToolbarItem(placement: .navigationBarTrailing) {
                 if !appList.isSelectorMode {
                     Menu {
                         Button(action: batchEnableAll) {
-                            Label("启用所有插件", systemImage: "square.stack.3d.up")
+                            Label(NSLocalizedString("Enable All Plugins", comment: ""), systemImage: "square.stack.3d.up")
                         }
                         .disabled(isBatchProcessing)
 
                         Button(action: batchDisableAll) {
-                            Label("禁用所有插件", systemImage: "square.stack.3d.up.slash")
+                            Label(NSLocalizedString("Disable All Plugins", comment: ""), systemImage: "square.stack.3d.up.slash")
                         }
                         .disabled(isBatchProcessing)
                     } label: {
@@ -332,7 +332,6 @@ struct AppListView: View {
                         Text(NSLocalizedString("Only removable system applications are eligible and listed.", comment: ""))
                             .font(.footnote)
                     } else if appList.activeScope != .troll && appList.unsupportedCount > 0 {
-                        // 可点击的按钮，显示不支持的应用数量
                         Button {
                             showingUnsupportedApps = true
                         } label: {
@@ -493,7 +492,7 @@ struct AppListView: View {
             : NSLocalizedString("Search…", comment: ""))
     }
 
-    // MARK: - 批量操作（全量启用/禁用，作用于所有支持注入的应用）
+    // MARK: - 批量操作（作用于所有支持注入的应用，包括巨魔应用）
 
     private func batchEnableAll() {
         let allApps = appList.allSupportedApps
@@ -508,20 +507,13 @@ struct AppListView: View {
     }
 
     private func performBatchOperation(on apps: [App], enable: Bool) {
-        // 过滤出可操作的应用（User 类型且允许注入/卸载）
-        let operableApps = apps.filter { $0.isUser && $0.isAllowedToAttachOrDetach }
-        if operableApps.isEmpty {
-            batchResultMessage = "没有可操作的应用。"
-            return
-        }
-
         isBatchProcessing = true
 
         DispatchQueue.global(qos: .userInitiated).async {
             var successCount = 0
             var failCount = 0
 
-            for app in operableApps {
+            for app in apps {
                 do {
                     let injector = try InjectorV3(app.url)
                     if enable {
@@ -548,11 +540,11 @@ struct AppListView: View {
 
             DispatchQueue.main.async {
                 isBatchProcessing = false
-                let operationString = enable ? "启用" : "禁用"
+                let operationString = enable ? NSLocalizedString("enabled", comment: "") : NSLocalizedString("disabled", comment: "")
                 if failCount == 0 {
-                    batchResultMessage = "已成功\(operationString) \(successCount) 个应用的插件。"
+                    batchResultMessage = String(format: NSLocalizedString("Successfully %@ plugins for %d app(s).", comment: ""), operationString, successCount)
                 } else {
-                    batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个。"
+                    batchResultMessage = String(format: NSLocalizedString("Completed with %d success, %d failure(s).", comment: ""), successCount, failCount)
                 }
                 appList.reload()
             }
@@ -593,11 +585,11 @@ struct UnsupportedAppsView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("不支持的应用")
+            .navigationTitle(NSLocalizedString("Unsupported Applications", comment: ""))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("关闭") {
+                    Button(NSLocalizedString("Close", comment: "")) {
                         presentationMode.wrappedValue.dismiss()
                     }
                 }
