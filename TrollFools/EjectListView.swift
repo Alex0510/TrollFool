@@ -23,7 +23,7 @@ struct EjectListView: View {
     @State var lastError: Error?
 
     @State var isWarningPresented = false
-    
+
     // 继续注入相关
     @State var isContinueInjectPresented = false
     @State var isInjecting = false
@@ -53,25 +53,25 @@ struct EjectListView: View {
     var body: some View {
         if #available(iOS 15, *) {
             content
-                .alert(NSLocalizedString("Eject All", comment: ""), isPresented: $isWarningPresented) {
+                .alert("全部推出", isPresented: $isWarningPresented) {
                     Button(role: .destructive) {
                         deleteAll(shouldDesist: true)
                     } label: {
-                        Text(NSLocalizedString("Confirm", comment: ""))
+                        Text("确认")
                     }
                     Button(role: .cancel) {
                         isWarningPresented = false
                     } label: {
-                        Text(NSLocalizedString("Cancel", comment: ""))
+                        Text("取消")
                     }
                 } message: {
-                    Text(NSLocalizedString("Are you sure you want to eject all plug-ins? This action cannot be undone.", comment: ""))
+                    Text("你确定要全部推出所有插件吗？此操作无法撤销。")
                 }
                 .alert(isPresented: .constant(injectSuccessMessage != nil)) {
                     Alert(
-                        title: Text(NSLocalizedString("Injection Complete", comment: "")),
+                        title: Text("注入完成"),
                         message: Text(injectSuccessMessage ?? ""),
-                        dismissButton: .default(Text(NSLocalizedString("OK", comment: ""))) {
+                        dismissButton: .default(Text("确定")) {
                             injectSuccessMessage = nil
                         }
                     )
@@ -144,7 +144,7 @@ struct EjectListView: View {
                 .searchable(
                     text: $ejectList.filter.searchKeyword,
                     placement: .automatic,
-                    prompt: NSLocalizedString("Search…", comment: "")
+                    prompt: "搜索…"
                 )
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
@@ -162,7 +162,7 @@ struct EjectListView: View {
                             searchController.searchResultsUpdater = searchViewModel
                             searchController.obscuresBackgroundDuringPresentation = false
                             searchController.hidesNavigationBarDuringPresentation = true
-                            searchController.searchBar.placeholder = NSLocalizedString("Search…", comment: "")
+                            searchController.searchBar.placeholder = "搜索…"
                             return searchController
                         }()
                         searchViewModel.searchController = viewController.navigationItem.searchController
@@ -180,10 +180,10 @@ struct EjectListView: View {
                 .onDelete(perform: deletePlugIns)
             } header: {
                 paddedHeaderFooterText(ejectList.filteredPlugIns.isEmpty
-                    ? NSLocalizedString("No Injected Plug-Ins", comment: "")
-                    : NSLocalizedString("Injected Plug-Ins", comment: ""))
+                    ? "没有已注入的插件"
+                    : "已注入的插件")
             } footer: {
-                paddedHeaderFooterText(NSLocalizedString("After the app upgrade, any injected plugins will be disabled. You will need to manually re-enable them.", comment: ""))
+                paddedHeaderFooterText("App 更新后，所有已注入的插件都会被禁用。你需要手动重新启用它们。")
             }
 
             Section {
@@ -195,8 +195,8 @@ struct EjectListView: View {
                     disableAllButton
                         .disabled(shouldDisableActions || !ejectList.isOkToDisableAll)
                         .foregroundColor(shouldDisableActions ? .secondary : .accentColor)
-                    
-                    // 新增：继续注入按钮
+
+                    // 继续注入按钮
                     continueInjectButton
                         .disabled(shouldDisableActions)
                         .foregroundColor(shouldDisableActions ? .secondary : .accentColor)
@@ -211,12 +211,12 @@ struct EjectListView: View {
                 }
             } footer: {
                 if shouldShowActions && ejectList.app.isFromTroll {
-                    paddedHeaderFooterText(NSLocalizedString("Some plug-ins were not injected by TrollFools, please eject them with caution.", comment: ""))
+                    paddedHeaderFooterText("部分插件可能并非由 TrollFools 注入，移除它们可能会造成应用程序异常，请谨慎操作。")
                 }
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle(NSLocalizedString("Plug-Ins", comment: ""))
+        .navigationTitle("插件列表")
         .animation(.easeOut, value: combines(
             ejectList.filter,
             ejectList.isOkToEnableAll,
@@ -228,7 +228,7 @@ struct EjectListView: View {
         ))
         .background(NavigationLink(isActive: $isErrorOccurred) {
             FailureView(
-                title: NSLocalizedString("Error", comment: ""),
+                title: "错误",
                 error: lastError
             )
         } label: { })
@@ -249,7 +249,7 @@ struct EjectListView: View {
 
     var enableAllButtonLabel: some View {
         HStack {
-            Label(NSLocalizedString("Enable All", comment: ""), systemImage: "square.stack.3d.up")
+            Label("全部启用", systemImage: "square.stack.3d.up")
 
             Spacer()
 
@@ -271,7 +271,7 @@ struct EjectListView: View {
 
     var disableAllButtonLabel: some View {
         HStack {
-            Label(NSLocalizedString("Disable All", comment: ""), systemImage: "square.stack.3d.up.slash")
+            Label("全部禁用", systemImage: "square.stack.3d.up.slash")
 
             Spacer()
 
@@ -282,7 +282,7 @@ struct EjectListView: View {
             }
         }
     }
-    
+
     // 继续注入按钮
     var continueInjectButton: some View {
         Button {
@@ -291,10 +291,10 @@ struct EjectListView: View {
             continueInjectButtonLabel
         }
     }
-    
+
     var continueInjectButtonLabel: some View {
         HStack {
-            Label(NSLocalizedString("Continue Inject", comment: ""), systemImage: "syringe")
+            Label("继续注入", systemImage: "syringe")
             Spacer()
             if isInjecting {
                 ProgressView()
@@ -322,7 +322,7 @@ struct EjectListView: View {
 
     var deleteAllButtonLabel: some View {
         HStack {
-            Label(NSLocalizedString("Eject All", comment: ""), systemImage: "eject")
+            Label("全部推出", systemImage: "eject")
 
             Spacer()
 
@@ -344,7 +344,7 @@ struct EjectListView: View {
                         urls: ejectList.injectedPlugIns.map(\.url)
                     ),
                     preview: SharePreview(
-                        String(format: NSLocalizedString("%ld Plug-Ins of “%@”", comment: ""), ejectList.injectedPlugIns.count, ejectList.app.name)
+                        String(format: "%ld 个“%@”的插件", ejectList.injectedPlugIns.count, ejectList.app.name)
                     )
                 ) {
                     if isExportingAll {
@@ -352,7 +352,7 @@ struct EjectListView: View {
                             .progressViewStyle(CircularProgressViewStyle())
                             .transition(.opacity)
                     } else {
-                        Label(NSLocalizedString("Export All", comment: ""), systemImage: "square.and.arrow.up")
+                        Label("全部导出", systemImage: "square.and.arrow.up")
                             .transition(.opacity)
                     }
                 }
@@ -366,7 +366,7 @@ struct EjectListView: View {
                             .progressViewStyle(CircularProgressViewStyle())
                             .transition(.opacity)
                     } else {
-                        Label(NSLocalizedString("Export All", comment: ""), systemImage: "square.and.arrow.up")
+                        Label("全部导出", systemImage: "square.and.arrow.up")
                             .transition(.opacity)
                     }
                 }
@@ -688,17 +688,17 @@ struct EjectListView: View {
             quickLookExport = zipURL
         }
     }
-    
+
     // MARK: - 继续注入逻辑
     private func continueInject(with urls: [URL]) {
         isInjecting = true
         let view = viewControllerHost.viewController?.navigationController?.view
         view?.isUserInteractionEnabled = false
-        
+
         DispatchQueue.global(qos: .userInitiated).async {
             var logFileURL: URL?
             var injectError: Error?
-            
+
             defer {
                 DispatchQueue.main.async {
                     isInjecting = false
@@ -707,28 +707,28 @@ struct EjectListView: View {
                         lastError = error
                         isErrorOccurred = true
                     } else {
-                        injectSuccessMessage = String(format: NSLocalizedString("Successfully injected %d file(s).", comment: ""), urls.count)
+                        injectSuccessMessage = "成功注入 \(urls.count) 个文件。"
                         ejectList.reload()
                         ejectList.app.reload()
                     }
                 }
             }
-            
+
             do {
                 let injector = try InjectorV3(ejectList.app.url)
                 logFileURL = injector.latestLogFileURL
-                
+
                 if injector.appID.isEmpty {
                     injector.appID = ejectList.app.bid
                 }
                 if injector.teamID.isEmpty {
                     injector.teamID = ejectList.app.teamID
                 }
-                
+
                 injector.useWeakReference = useWeakReference
                 injector.preferMainExecutable = preferMainExecutable
                 injector.injectStrategy = injectStrategy
-                
+
                 try injector.inject(urls, shouldPersist: true)
             } catch {
                 DDLogError("Continue inject error: \(error)", ddlog: InjectorV3.main.logger)
