@@ -23,6 +23,11 @@ struct EjectListView: View {
     @State var lastError: Error?
 
     @State var isWarningPresented = false
+    
+    // 继续注入相关
+    @State var isContinueInjectPresented = false
+    @State var isInjecting = false
+    @State var injectSuccessMessage: String?
 
     @StateObject var viewControllerHost = ViewControllerHost()
 
@@ -35,7 +40,7 @@ struct EjectListView: View {
     }
 
     var shouldDisableActions: Bool {
-        isEnablingAll || isDisablingAll || isDeletingAll
+        isEnablingAll || isDisablingAll || isDeletingAll || isInjecting
     }
 
     init(_ app: App) {
@@ -62,6 +67,15 @@ struct EjectListView: View {
                 } message: {
                     Text(NSLocalizedString("Are you sure you want to eject all plug-ins? This action cannot be undone.", comment: ""))
                 }
+                .alert(isPresented: .constant(injectSuccessMessage != nil)) {
+                    Alert(
+                        title: Text(NSLocalizedString("Injection Complete", comment: "")),
+                        message: Text(injectSuccessMessage ?? ""),
+                        dismissButton: .default(Text(NSLocalizedString("OK", comment: ""))) {
+                            injectSuccessMessage = nil
+                        }
+                    )
+                }
         } else {
             content
         }
@@ -72,6 +86,26 @@ struct EjectListView: View {
             .toolbar { toolbarContent }
             .animation(.easeOut, value: isExportingAll)
             .quickLookPreview($quickLookExport)
+            .fileImporter(
+                isPresented: $isContinueInjectPresented,
+                allowedContentTypes: [
+                    .init(filenameExtension: "dylib")!,
+                    .init(filenameExtension: "deb")!,
+                    .bundle,
+                    .framework,
+                    .package,
+                    .zip,
+                ],
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    continueInject(with: urls)
+                case .failure(let error):
+                    lastError = error
+                    isErrorOccurred = true
+                }
+            }
     }
 
     @ViewBuilder
@@ -161,6 +195,11 @@ struct EjectListView: View {
                     disableAllButton
                         .disabled(shouldDisableActions || !ejectList.isOkToDisableAll)
                         .foregroundColor(shouldDisableActions ? .secondary : .accentColor)
+                    
+                    // 新增：继续注入按钮
+                    continueInjectButton
+                        .disabled(shouldDisableActions)
+                        .foregroundColor(shouldDisableActions ? .secondary : .accentColor)
                 }
             }
 
@@ -184,7 +223,8 @@ struct EjectListView: View {
             ejectList.isOkToDisableAll,
             isEnablingAll,
             isDisablingAll,
-            isDeletingAll
+            isDeletingAll,
+            isInjecting
         ))
         .background(NavigationLink(isActive: $isErrorOccurred) {
             FailureView(
@@ -236,6 +276,27 @@ struct EjectListView: View {
             Spacer()
 
             if isDisablingAll {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .transition(.opacity)
+            }
+        }
+    }
+    
+    // 继续注入按钮
+    var continueInjectButton: some View {
+        Button {
+            isContinueInjectPresented = true
+        } label: {
+            continueInjectButtonLabel
+        }
+    }
+    
+    var continueInjectButtonLabel: some View {
+        HStack {
+            Label(NSLocalizedString("Continue Inject", comment: ""), systemImage: "syringe")
+            Spacer()
+            if isInjecting {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle())
                     .transition(.opacity)
@@ -625,6 +686,58 @@ struct EjectListView: View {
 
         DispatchQueue.main.async {
             quickLookExport = zipURL
+        }
+    }
+    
+    // MARK: - 继续注入逻辑
+    private func continueInject(with urls: [URL]) {
+        isInjecting = true
+        let view = viewControllerHost.viewController?.navigationController?.view
+        view?.isUserInteractionEnabled = false
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            var logFileURL: URL?
+            var injectError: Error?
+            
+            defer {
+                DispatchQueue.main.async {
+                    isInjecting = false
+                    view?.isUserInteractionEnabled = true
+                    if let error = injectError {
+                        lastError = error
+                        isErrorOccurred = true
+                    } else {
+                        injectSuccessMessage = String(format: NSLocalizedString("Successfully injected %d file(s).", comment: ""), urls.count)
+                        ejectList.reload()
+                        ejectList.app.reload()
+                    }
+                }
+            }
+            
+            do {
+                let injector = try InjectorV3(ejectList.app.url)
+                logFileURL = injector.latestLogFileURL
+                
+                if injector.appID.isEmpty {
+                    injector.appID = ejectList.app.bid
+                }
+                if injector.teamID.isEmpty {
+                    injector.teamID = ejectList.app.teamID
+                }
+                
+                injector.useWeakReference = useWeakReference
+                injector.preferMainExecutable = preferMainExecutable
+                injector.injectStrategy = injectStrategy
+                
+                try injector.inject(urls, shouldPersist: true)
+            } catch {
+                DDLogError("Continue inject error: \(error)", ddlog: InjectorV3.main.logger)
+                var userInfo: [String: Any] = [NSLocalizedDescriptionKey: error.localizedDescription]
+                if let logFileURL {
+                    userInfo[NSURLErrorKey] = logFileURL
+                }
+                injectError = NSError(domain: Constants.gErrorDomain, code: 0, userInfo: userInfo)
+            }
         }
     }
 
