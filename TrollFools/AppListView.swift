@@ -1,6 +1,6 @@
 //
 //  AppListView.swift
-//  TrollFool
+//  TrollFools
 //
 //  Created by Lessica on 2024/7/19.
 //
@@ -30,7 +30,6 @@ struct AppListView: View {
     @AppStorage("isWarningHidden")
     var isWarningHidden: Bool = false
 
-    // 新增：控制显示不支持应用列表的 sheet
     @State private var showingUnsupportedApps = false
 
     var appString: String {
@@ -289,7 +288,6 @@ struct AppListView: View {
                 }
 
                 if !appList.filter.isSearching && !appList.filter.showPatchedOnly && !appList.isRebuildNeeded {
-                    // 修改：将原来的文本替换为可点击按钮
                     unsupportedAppsButton
                         .transition(.opacity)
                 }
@@ -474,9 +472,9 @@ struct AppListView: View {
     }
 }
 
-// 新增：用于展示不支持应用列表的 Sheet 视图
+// 展示不支持应用列表的 Sheet 视图
 struct UnsupportedAppsSheet: View {
-    let apps: [App]  // 假设 App 是已有的应用模型类型
+    let apps: [App]
     @Environment(\.presentationMode) var presentationMode
 
     var body: some View {
