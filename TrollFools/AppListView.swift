@@ -30,7 +30,11 @@ struct AppListView: View {
     @AppStorage("isWarningHidden")
     var isWarningHidden: Bool = false
 
-    @State private var showingUnsupportedApps = false
+    // MARK: - Batch mode
+    @State private var editMode: EditMode = .inactive
+    @State private var selectedAppIDs = Set<String>()
+    @State private var isBatchProcessing = false
+    @State private var batchResultMessage: String?
 
     var appString: String {
         let appNameString = Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "TrollFools"
@@ -82,6 +86,15 @@ struct AppListView: View {
                 } message: {
                     Text(OptionView.warningMessage([$0.url]))
                 }
+                .alert(isPresented: .constant(batchResultMessage != nil)) {
+                    Alert(
+                        title: Text(NSLocalizedString("Batch Operation", comment: "")),
+                        message: Text(batchResultMessage ?? ""),
+                        dismissButton: .default(Text(NSLocalizedString("OK", comment: ""))) {
+                            batchResultMessage = nil
+                        }
+                    )
+                }
         } else {
             content
         }
@@ -93,9 +106,6 @@ struct AppListView: View {
             .sheet(item: $selectorOpenedURL) { urlWrapper in
                 AppListView()
                     .environmentObject(AppListModel(selectorURL: urlWrapper.url))
-            }
-            .sheet(isPresented: $showingUnsupportedApps) {
-                UnsupportedAppsSheet(apps: appList.unsupportedApps)
             }
             .onOpenURL { url in
                 let ext = url.pathExtension.lowercased()
@@ -125,6 +135,7 @@ struct AppListView: View {
                     }
                 }
             }
+            .environment(\.editMode, $editMode)
     }
 
     @ViewBuilder
@@ -226,7 +237,7 @@ struct AppListView: View {
     }
 
     var listView: some View {
-        List {
+        List(selection: $selectedAppIDs) {
             topSection
             appSections
         }
@@ -251,21 +262,72 @@ struct AppListView: View {
                     }
                 }
             }
+            
+            // 原有的 Show Patched Only 按钮
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    appList.filter.showPatchedOnly.toggle()
-                } label: {
-                    if #available(iOS 15, *) {
-                        Image(systemName: appList.filter.showPatchedOnly
-                            ? "line.3.horizontal.decrease.circle.fill"
-                            : "line.3.horizontal.decrease.circle")
-                    } else {
-                        Image(systemName: appList.filter.showPatchedOnly
-                            ? "eject.circle.fill"
-                            : "eject.circle")
+                if !editMode.isEditing {
+                    Button {
+                        appList.filter.showPatchedOnly.toggle()
+                    } label: {
+                        if #available(iOS 15, *) {
+                            Image(systemName: appList.filter.showPatchedOnly
+                                ? "line.3.horizontal.decrease.circle.fill"
+                                : "line.3.horizontal.decrease.circle")
+                        } else {
+                            Image(systemName: appList.filter.showPatchedOnly
+                                ? "eject.circle.fill"
+                                : "eject.circle")
+                        }
+                    }
+                    .accessibilityLabel(NSLocalizedString("Show Patched Only", comment: ""))
+                }
+            }
+            
+            // 新增批量操作按钮
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if !appList.isSelectorMode && !editMode.isEditing {
+                    Menu {
+                        Button(action: enterBatchMode) {
+                            Label(NSLocalizedString("Batch Select", comment: ""), systemImage: "checklist")
+                        }
+                        Button(action: batchEnableAll) {
+                            Label(NSLocalizedString("Enable Plugins for All Apps", comment: ""), systemImage: "square.stack.3d.up")
+                        }
+                        Button(action: batchDisableAll) {
+                            Label(NSLocalizedString("Disable Plugins for All Apps", comment: ""), systemImage: "square.stack.3d.up.slash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
                 }
-                .accessibilityLabel(NSLocalizedString("Show Patched Only", comment: ""))
+            }
+            
+            // 批量编辑模式下的工具栏
+            ToolbarItemGroup(placement: .navigationBarLeading) {
+                if editMode.isEditing {
+                    Button(NSLocalizedString("Cancel", comment: "")) {
+                        exitBatchMode()
+                    }
+                }
+            }
+            
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if editMode.isEditing {
+                    Button(NSLocalizedString("Enable", comment: "")) {
+                        performBatchEnable()
+                    }
+                    .disabled(selectedAppIDs.isEmpty || isBatchProcessing)
+                    
+                    Button(NSLocalizedString("Disable", comment: "")) {
+                        performBatchDisable()
+                    }
+                    .disabled(selectedAppIDs.isEmpty || isBatchProcessing)
+                    
+                    Button(NSLocalizedString("Done", comment: "")) {
+                        exitBatchMode()
+                    }
+                    .disabled(isBatchProcessing)
+                }
             }
         }
     }
@@ -288,8 +350,14 @@ struct AppListView: View {
                 }
 
                 if !appList.filter.isSearching && !appList.filter.showPatchedOnly && !appList.isRebuildNeeded {
-                    unsupportedAppsButton
-                        .transition(.opacity)
+                    paddedHeaderFooterText(
+                        appList.activeScope == .system
+                            ? NSLocalizedString("Only removable system applications are eligible and listed.", comment: "")
+                            : (appList.activeScope != .troll && appList.unsupportedCount > 0
+                                ? String(format: NSLocalizedString("And %d more unsupported user applications.", comment: ""), appList.unsupportedCount)
+                                : "")
+                    )
+                    .transition(.opacity)
                 }
             }
         }
@@ -330,25 +398,6 @@ struct AppListView: View {
         }
     }
 
-    @ViewBuilder
-    var unsupportedAppsButton: some View {
-        if appList.activeScope == .system {
-            paddedHeaderFooterText(
-                NSLocalizedString("Only removable system applications are eligible and listed.", comment: "")
-            )
-        } else if appList.activeScope != .troll && appList.unsupportedCount > 0 {
-            Button {
-                showingUnsupportedApps = true
-            } label: {
-                Text(String(format: NSLocalizedString("And %d more unsupported user applications.", comment: ""), appList.unsupportedCount))
-                    .font(.footnote)
-                    .foregroundColor(.accentColor)
-            }
-        } else {
-            EmptyView()
-        }
-    }
-
     var appSections: some View {
         ForEach(appList.activeScopeApps.isEmpty ? ["_"] : Array(appList.activeScopeApps.keys), id: \.self) { sectionKey in
             appSection(forKey: sectionKey)
@@ -372,6 +421,7 @@ struct AppListView: View {
                             .padding(.vertical, 4)
                     }
                 }
+                .tag(app.bid)  // 用于多选
             }
         } header: {
             if sectionKey == "_" {
@@ -470,52 +520,113 @@ struct AppListView: View {
                 .padding(.horizontal, 16)
         }
     }
-}
-
-// 展示不支持应用列表的 Sheet 视图
-struct UnsupportedAppsSheet: View {
-    let apps: [App]
-    @Environment(\.presentationMode) var presentationMode
-
-    var body: some View {
-        NavigationView {
-            List {
-                ForEach(apps, id: \.bid) { app in
-                    HStack {
-                        if let icon = app.icon {
-                            Image(uiImage: icon)
-                                .resizable()
-                                .frame(width: 30, height: 30)
-                                .cornerRadius(6)
-                        } else {
-                            Rectangle()
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(width: 30, height: 30)
-                                .cornerRadius(6)
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(app.name)
-                                .font(.body)
-                            Text(app.bid)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle(NSLocalizedString("Unsupported Applications", comment: ""))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(NSLocalizedString("Done", comment: "")) {
-                        presentationMode.wrappedValue.dismiss()
-                    }
+    
+    // MARK: - Batch Mode Helpers
+    
+    private func enterBatchMode() {
+        editMode = .active
+        selectedAppIDs.removeAll()
+    }
+    
+    private func exitBatchMode() {
+        editMode = .inactive
+        selectedAppIDs.removeAll()
+    }
+    
+    private func batchEnableAll() {
+        let allApps = getAllCurrentApps()
+        guard !allApps.isEmpty else { return }
+        performBatchOperation(on: allApps, enable: true)
+    }
+    
+    private func batchDisableAll() {
+        let allApps = getAllCurrentApps()
+        guard !allApps.isEmpty else { return }
+        performBatchOperation(on: allApps, enable: false)
+    }
+    
+    private func performBatchEnable() {
+        let apps = getSelectedApps()
+        performBatchOperation(on: apps, enable: true)
+    }
+    
+    private func performBatchDisable() {
+        let apps = getSelectedApps()
+        performBatchOperation(on: apps, enable: false)
+    }
+    
+    private func getAllCurrentApps() -> [App] {
+        var allApps: [App] = []
+        for section in appList.activeScopeApps.values {
+            allApps.append(contentsOf: section)
+        }
+        return allApps
+    }
+    
+    private func getSelectedApps() -> [App] {
+        var selectedApps: [App] = []
+        for section in appList.activeScopeApps.values {
+            for app in section {
+                if selectedAppIDs.contains(app.bid) {
+                    selectedApps.append(app)
                 }
             }
         }
-        .navigationViewStyle(.stack)
+        return selectedApps
+    }
+    
+    private func performBatchOperation(on apps: [App], enable: Bool) {
+        guard !apps.isEmpty else { return }
+        
+        // 过滤出可操作的应用 (User 类型且允许注入/卸载)
+        let operableApps = apps.filter { $0.isUser && $0.isAllowedToAttachOrDetach }
+        if operableApps.isEmpty {
+            batchResultMessage = NSLocalizedString("No operable applications selected.", comment: "")
+            return
+        }
+        
+        isBatchProcessing = true
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            var successCount = 0
+            var failCount = 0
+            
+            for app in operableApps {
+                do {
+                    let injector = try InjectorV3(app.url)
+                    if enable {
+                        // 启用所有持久化插件（即重新注入已存在的、但未注入的插件）
+                        let persistedURLs = InjectorV3.main.persistedAssetURLs(bid: app.bid)
+                        let injectedURLs = InjectorV3.main.injectedAssetURLsInBundle(app.url)
+                        let toInject = persistedURLs.filter { !injectedURLs.contains($0) }
+                        if !toInject.isEmpty {
+                            try injector.inject(toInject, shouldPersist: false)
+                        }
+                    } else {
+                        // 禁用所有已注入的插件（但不删除文件）
+                        try injector.ejectAll(shouldDesist: false)
+                    }
+                    DispatchQueue.main.async {
+                        app.reload()
+                    }
+                    successCount += 1
+                } catch {
+                    DDLogError("Batch operation failed for \(app.bid): \(error)")
+                    failCount += 1
+                }
+            }
+            
+            DispatchQueue.main.async {
+                isBatchProcessing = false
+                if failCount == 0 {
+                    batchResultMessage = String(format: NSLocalizedString("Successfully %@ plugins for %d app(s).", comment: ""), enable ? "enabled" : "disabled", successCount)
+                } else {
+                    batchResultMessage = String(format: NSLocalizedString("Completed with %d success, %d failure(s).", comment: ""), successCount, failCount)
+                }
+                appList.reload()
+                exitBatchMode()
+            }
+        }
     }
 }
 
