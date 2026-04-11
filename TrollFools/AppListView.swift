@@ -30,6 +30,9 @@ struct AppListView: View {
     @AppStorage("isWarningHidden")
     var isWarningHidden: Bool = false
 
+    // 新增：控制显示不支持应用列表的 sheet
+    @State private var showingUnsupportedApps = false
+
     var appString: String {
         let appNameString = Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "TrollFools"
         let appVersionString = String(
@@ -91,6 +94,9 @@ struct AppListView: View {
             .sheet(item: $selectorOpenedURL) { urlWrapper in
                 AppListView()
                     .environmentObject(AppListModel(selectorURL: urlWrapper.url))
+            }
+            .sheet(isPresented: $showingUnsupportedApps) {
+                UnsupportedAppsSheet(apps: appList.unsupportedApps)
             }
             .onOpenURL { url in
                 let ext = url.pathExtension.lowercased()
@@ -283,14 +289,9 @@ struct AppListView: View {
                 }
 
                 if !appList.filter.isSearching && !appList.filter.showPatchedOnly && !appList.isRebuildNeeded {
-                    paddedHeaderFooterText(
-                        appList.activeScope == .system
-                            ? NSLocalizedString("Only removable system applications are eligible and listed.", comment: "")
-                            : (appList.activeScope != .troll && appList.unsupportedCount > 0
-                                ? String(format: NSLocalizedString("And %d more unsupported user applications.", comment: ""), appList.unsupportedCount)
-                                : "")
-                    )
-                    .transition(.opacity)
+                    // 修改：将原来的文本替换为可点击按钮
+                    unsupportedAppsButton
+                        .transition(.opacity)
                 }
             }
         }
@@ -328,6 +329,25 @@ struct AppListView: View {
         } label: {
             Text(String(format: NSLocalizedString("New version %@ available!", comment: ""), latestVersionString ?? "(null)"))
                 .font(.footnote)
+        }
+    }
+
+    @ViewBuilder
+    var unsupportedAppsButton: some View {
+        if appList.activeScope == .system {
+            paddedHeaderFooterText(
+                NSLocalizedString("Only removable system applications are eligible and listed.", comment: "")
+            )
+        } else if appList.activeScope != .troll && appList.unsupportedCount > 0 {
+            Button {
+                showingUnsupportedApps = true
+            } label: {
+                Text(String(format: NSLocalizedString("And %d more unsupported user applications.", comment: ""), appList.unsupportedCount))
+                    .font(.footnote)
+                    .foregroundColor(.accentColor)
+            }
+        } else {
+            EmptyView()
         }
     }
 
@@ -451,6 +471,53 @@ struct AppListView: View {
                 .font(.footnote)
                 .padding(.horizontal, 16)
         }
+    }
+}
+
+// 新增：用于展示不支持应用列表的 Sheet 视图
+struct UnsupportedAppsSheet: View {
+    let apps: [App]  // 假设 App 是已有的应用模型类型
+    @Environment(\.presentationMode) var presentationMode
+
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(apps, id: \.bid) { app in
+                    HStack {
+                        if let icon = app.icon {
+                            Image(uiImage: icon)
+                                .resizable()
+                                .frame(width: 30, height: 30)
+                                .cornerRadius(6)
+                        } else {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(width: 30, height: 30)
+                                .cornerRadius(6)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(app.name)
+                                .font(.body)
+                            Text(app.bid)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle(NSLocalizedString("Unsupported Applications", comment: ""))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(NSLocalizedString("Done", comment: "")) {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
     }
 }
 
