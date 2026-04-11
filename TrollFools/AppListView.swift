@@ -570,7 +570,7 @@ struct URLIdentifiable: Identifiable {
     var id: String { url.absoluteString }
 }
 
-// MARK: - 不支持的应用详情页
+// MARK: - 不支持的应用详情页（带图标）
 struct UnsupportedAppsView: View {
     let unsupportedApps: [App]
     @Environment(\.presentationMode) var presentationMode
@@ -579,20 +579,28 @@ struct UnsupportedAppsView: View {
         NavigationView {
             List {
                 ForEach(unsupportedApps, id: \.bid) { app in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(app.name)
-                                .font(.headline)
-                            Spacer()
-                            if let version = app.version {
-                                Text(version)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
+                    HStack(spacing: 12) {
+                        // 应用图标
+                        Image(uiImage: app.icon ?? UIImage())
+                            .resizable()
+                            .frame(width: 32, height: 32)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(app.name)
+                                    .font(.headline)
+                                Spacer()
+                                if let version = app.version {
+                                    Text(version)
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
                             }
+                            Text(app.bid)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
-                        Text(app.bid)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
                     }
                     .padding(.vertical, 4)
                 }
