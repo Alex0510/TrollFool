@@ -55,7 +55,10 @@ final class AppListModel: ObservableObject {
     @Published var activeScopeApps: OrderedDictionary<String, [App]> = [:]
 
     @Published var unsupportedCount: Int = 0
-    @Published var unsupportedApps: [App] = []   // 不支持注入的应用列表
+    @Published var unsupportedApps: [App] = []
+
+    // 公开所有支持注入的应用（用于批量操作）
+    var allSupportedApps: [App] { _allApplications }
 
     lazy var isFilzaInstalled: Bool = {
         if let filzaURL {
