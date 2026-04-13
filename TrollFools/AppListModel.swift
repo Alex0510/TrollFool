@@ -8,6 +8,7 @@
 import Combine
 import OrderedCollections
 import SwiftUI
+import CocoaLumberjackSwift
 
 final class AppListModel: ObservableObject {
     enum Scope: Int, CaseIterable {
