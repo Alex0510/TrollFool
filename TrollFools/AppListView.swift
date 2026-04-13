@@ -284,7 +284,7 @@ struct AppListView: View {
                 }
             }
 
-            // 批量操作菜单（中文）
+            // 批量操作菜单（中文）——增加“一键移除所有插件”
             ToolbarItem(placement: .navigationBarTrailing) {
                 if !appList.isSelectorMode {
                     Menu {
@@ -295,6 +295,12 @@ struct AppListView: View {
 
                         Button(action: batchDisableAll) {
                             Label("禁用所有插件", systemImage: "square.stack.3d.up.slash")
+                        }
+                        .disabled(isBatchProcessing)
+
+                        // 新增：一键移除所有插件
+                        Button(action: batchRemoveAll) {
+                            Label("移除所有插件", systemImage: "trash")
                         }
                         .disabled(isBatchProcessing)
                     } label: {
@@ -506,6 +512,13 @@ struct AppListView: View {
         performBatchOperation(on: allApps, enable: false)
     }
 
+    // 新增：一键移除所有插件（删除持久化文件并推出已注入的插件）
+    private func batchRemoveAll() {
+        let allApps = appList.allSupportedApps
+        guard !allApps.isEmpty else { return }
+        performBatchRemove(on: allApps)
+    }
+
     private func performBatchOperation(on apps: [App], enable: Bool) {
         isBatchProcessing = true
 
@@ -556,6 +569,41 @@ struct AppListView: View {
                     } else {
                         batchResultMessage = "已成功禁用 \(successCount) 个应用的插件。"
                     }
+                } else {
+                    batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个。"
+                }
+                appList.reload()
+            }
+        }
+    }
+
+    // 新增：批量移除所有插件（彻底删除）
+    private func performBatchRemove(on apps: [App]) {
+        isBatchProcessing = true
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            var successCount = 0
+            var failCount = 0
+
+            for app in apps {
+                do {
+                    let injector = try InjectorV3(app.url)
+                    // 使用 ejectAll(shouldDesist: true) 会同时移除已注入的插件和持久化文件
+                    try injector.ejectAll(shouldDesist: true)
+                    DispatchQueue.main.async {
+                        app.reload()
+                    }
+                    successCount += 1
+                } catch {
+                    DDLogError("Batch remove failed for \(app.bid): \(error)")
+                    failCount += 1
+                }
+            }
+
+            DispatchQueue.main.async {
+                isBatchProcessing = false
+                if failCount == 0 {
+                    batchResultMessage = "已成功移除 \(successCount) 个应用的所有插件。"
                 } else {
                     batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个。"
                 }
