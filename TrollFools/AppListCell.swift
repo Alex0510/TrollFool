@@ -1,6 +1,6 @@
 //
 //  AppListCell.swift
-//  TrollFools
+//  TrollFool
 //
 //  Created by 82Flex on 2024/10/30.
 //
@@ -12,6 +12,9 @@ struct AppListCell: View {
     @EnvironmentObject var appList: AppListModel
 
     @StateObject var app: App
+
+    @State private var isCleaningData = false
+    @State private var cleanResultMessage: String?
 
     @available(iOS 15, *)
     var highlightedName: AttributedString {
@@ -74,11 +77,11 @@ struct AppListCell: View {
                 if #available(iOS 15, *) {
                     Text(highlightedId)
                         .font(.subheadline)
-                        .lineLimit(app.isAdvertisement ? 2 : 1)
+                        .lineLimit(1)
                 } else {
                     Text(app.bid)
                         .font(.subheadline)
-                        .lineLimit(app.isAdvertisement ? 2 : 1)
+                        .lineLimit(1)
                 }
             }
 
@@ -103,19 +106,23 @@ struct AppListCell: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
-            } else if app.isAdvertisement {
-                Image("badge-ad")
-                    .foregroundColor(.secondary)
-                    .scaleEffect(1.2)
-                    .accessibilityLabel(NSLocalizedString("This is an advertisement.", comment: ""))
             }
         }
         .contextMenu {
-            if !appList.isSelectorMode && !app.isAdvertisement {
+            if !appList.isSelectorMode {
                 cellContextMenuWrapper
             }
         }
         .background(cellBackground)
+        .alert(isPresented: .constant(cleanResultMessage != nil)) {
+            Alert(
+                title: Text("清理数据"),
+                message: Text(cleanResultMessage ?? ""),
+                dismissButton: .default(Text("确定")) {
+                    cleanResultMessage = nil
+                }
+            )
+        }
     }
 
     @ViewBuilder
@@ -150,8 +157,43 @@ struct AppListCell: View {
             }
         }
 
+        // 数据目录
+        if let dataURL = app.dataContainerURL {
+            Button {
+                openInFilza(dataURL)
+            } label: {
+                Label("数据目录", systemImage: "folder")
+            }
+        }
+
+        // 应用组目录
+        if let groupURL = app.appGroupContainerURL {
+            Button {
+                openInFilza(groupURL)
+            } label: {
+                Label("应用组目录", systemImage: "folder.badge.gear")
+            }
+        }
+
+        // 清理数据（兼容 iOS 14）
+        if app.dataContainerURL != nil {
+            if #available(iOS 15, *) {
+                Button(role: .destructive) {
+                    confirmCleanData()
+                } label: {
+                    Label("清理数据", systemImage: "trash")
+                }
+            } else {
+                Button {
+                    confirmCleanData()
+                } label: {
+                    Label("清理数据", systemImage: "trash")
+                }
+            }
+        }
+
         Button {
-            openInFilza()
+            openInFilza(app.url)
         } label: {
             if isFilzaInstalled {
                 Label(NSLocalizedString("Show in Filza", comment: ""), systemImage: "scope")
@@ -165,12 +207,10 @@ struct AppListCell: View {
     @ViewBuilder
     var cellContextMenuWrapper: some View {
         if #available(iOS 16, *) {
-            // iOS 16
             cellContextMenu
         } else {
             if #available(iOS 15, *) { }
             else {
-                // iOS 14
                 cellContextMenu
             }
         }
@@ -181,7 +221,6 @@ struct AppListCell: View {
         if #available(iOS 15, *) {
             if #available(iOS 16, *) { }
             else {
-                // iOS 15
                 Color.clear
                     .contextMenu {
                         if !appList.isSelectorMode {
@@ -199,7 +238,55 @@ struct AppListCell: View {
 
     var isFilzaInstalled: Bool { appList.isFilzaInstalled }
 
-    private func openInFilza() {
-        appList.openInFilza(app.url)
+    private func openInFilza(_ url: URL) {
+        appList.openInFilza(url)
+    }
+
+    // MARK: - 清理数据
+    private func confirmCleanData() {
+        guard let dataURL = app.dataContainerURL else { return }
+
+        let alert = UIAlertController(
+            title: "清理数据",
+            message: "此操作将删除应用「\(app.name)」的所有用户数据（包括文档、缓存等），此操作不可撤销。是否继续？",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "确认清理", style: .destructive) { _ in
+            performCleanData(at: dataURL)
+        })
+
+        if let viewController = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+            viewController.present(alert, animated: true)
+        }
+    }
+
+    private func performCleanData(at directory: URL) {
+        isCleaningData = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let fileManager = FileManager.default
+            var success = true
+            var errorMessage: String?
+
+            do {
+                let contents = try fileManager.contentsOfDirectory(atPath: directory.path)
+                for item in contents {
+                    let itemURL = directory.appendingPathComponent(item)
+                    try fileManager.removeItem(at: itemURL)
+                }
+            } catch {
+                success = false
+                errorMessage = error.localizedDescription
+            }
+
+            DispatchQueue.main.async {
+                isCleaningData = false
+                if success {
+                    cleanResultMessage = "数据已清理完成。"
+                } else {
+                    cleanResultMessage = "清理失败：\(errorMessage ?? "未知错误")"
+                }
+            }
+        }
     }
 }
