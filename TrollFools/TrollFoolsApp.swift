@@ -20,8 +20,12 @@ struct TrollFoolsApp: SwiftUI.App {
             BackgroundTaskService.shared.registerBackgroundTask()
             BackgroundTaskService.shared.scheduleAppRefresh()
         }
+        
         // 启动后台自动注入监控服务
         AutoInjectService.shared.startMonitoring()
+        
+        // 启动自动恢复服务（应用更新后自动启用插件）
+        AutoResumeService.shared.checkAndResumePlugIns()
     }
 
     var body: some Scene {
@@ -38,8 +42,13 @@ struct TrollFoolsApp: SwiftUI.App {
             }
             .animation(.easeInOut, value: isDisclaimerHidden)
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("AutoInjectCompleted"))) { _ in
-                // 注入完成后刷新视图
                 NotificationCenter.default.post(name: NSNotification.Name("com.apple.LaunchServices.ApplicationsChanged"), object: nil)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("AutoResumeCompleted"))) { notification in
+                if let userInfo = notification.userInfo,
+                   let count = userInfo["count"] as? Int {
+                    DDLogInfo("Auto resumed \(count) plugins")
+                }
             }
         }
     }
