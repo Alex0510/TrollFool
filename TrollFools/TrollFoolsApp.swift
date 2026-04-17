@@ -16,10 +16,10 @@ struct TrollFoolsApp: SwiftUI.App {
     init() {
         try? FileManager.default.removeItem(at: InjectorV3.temporaryRoot)
        
-if #available(iOS 13.0, *) {
-    BackgroundTaskService.shared.registerBackgroundTask()
-    BackgroundTaskService.shared.scheduleAppRefresh()
-}
+        if #available(iOS 13.0, *) {
+            BackgroundTaskService.shared.registerBackgroundTask()
+            BackgroundTaskService.shared.scheduleAppRefresh()
+        }
         // 启动后台自动注入监控服务
         AutoInjectService.shared.startMonitoring()
     }
