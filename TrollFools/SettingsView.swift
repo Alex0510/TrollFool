@@ -26,12 +26,15 @@ struct SettingsView: View {
     @StateObject var viewControllerHost = ViewControllerHost()
     @State private var showClearConfirmation = false
     @State private var savedStatesCount = 0
-    @State private var savedStatesList: [(bid: String, count: Int)] = []
+    @State private var savedStatesDetail: [SavedAppState] = []
     @State private var clearResultMessage: String?
+    @State private var showForceCheckAlert = false
+    @State private var forceCheckMessage = ""
 
     var body: some View {
         NavigationView {
             Form {
+                // 原有设置项...
                 Section {
                     Picker(NSLocalizedString("Injection Strategy", comment: ""), selection: $injectStrategy) {
                         ForEach(InjectorV3.Strategy.allCases, id: \.self) { strategy in
@@ -71,18 +74,51 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
                     
-                    if !savedStatesList.isEmpty {
-                        ForEach(savedStatesList, id: \.bid) { item in
-                            HStack {
-                                Text(item.bid)
-                                    .font(.caption)
-                                    .lineLimit(1)
-                                Spacer()
-                                Text("\(item.count) 个插件")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                    if !savedStatesDetail.isEmpty {
+                        ForEach(savedStatesDetail) { state in
+                            DisclosureGroup(
+                                content: {
+                                    ForEach(state.pluginNames, id: \.self) { pluginName in
+                                        HStack {
+                                            Image(systemName: "puzzlepiece")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                            Text(pluginName)
+                                                .font(.caption)
+                                                .lineLimit(1)
+                                            Spacer()
+                                        }
+                                        .padding(.leading, 8)
+                                    }
+                                },
+                                label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(state.appName)
+                                                .font(.body)
+                                            Text(state.bid)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        Text("\(state.pluginNames.count) 个插件")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            )
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    removeSavedState(for: state.bid)
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
                             }
                         }
+                    } else if savedStatesCount > 0 {
+                        Text("加载中...")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
                     
                     Button(action: {
@@ -97,16 +133,29 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(savedStatesCount == 0)
+                    
+                    Button(action: {
+                        forceCheck()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                            Text("立即检查并恢复插件")
+                            Spacer()
+                        }
+                    }
                 } header: {
                     Text("自动恢复管理")
                 } footer: {
-                    paddedHeaderFooterText("当应用更新后，TrollFools 会自动重新启用之前启用的插件。此处显示已保存的插件状态，清除后将不会自动恢复。")
+                    paddedHeaderFooterText("当应用更新后，TrollFools 会自动重新启用之前启用的插件。此处显示已保存的插件状态，清除后将不会自动恢复。\n左滑应用可删除其保存状态。")
                 }
             }
             .navigationTitle(NSLocalizedString("Advanced Settings", comment: ""))
             .navigationBarTitleDisplayMode(.inline)
             .onViewWillAppear { viewController in
                 viewControllerHost.viewController = viewController
+                refreshSavedStates()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("AutoResumeStateChanged"))) { _ in
                 refreshSavedStates()
             }
             .toolbar {
@@ -138,17 +187,37 @@ struct SettingsView: View {
                     }
                 )
             }
+            .alert(isPresented: $showForceCheckAlert) {
+                Alert(
+                    title: Text("检查完成"),
+                    message: Text(forceCheckMessage),
+                    dismissButton: .default(Text("确定"))
+                )
+            }
         }
     }
     
     private func refreshSavedStates() {
-        savedStatesCount = AutoResumeService.shared.getSavedStatesCount()
-        savedStatesList = AutoResumeService.shared.getSavedStatesList()
+        savedStatesDetail = AutoResumeService.shared.getSavedStatesDetail()
+        savedStatesCount = savedStatesDetail.count
     }
     
     private func clearSavedStates() {
         let count = AutoResumeService.shared.clearAllSavedStates()
         clearResultMessage = "已清除 \(count) 个应用的自动恢复状态"
+    }
+    
+    private func removeSavedState(for bid: String) {
+        AutoResumeService.shared.removeSavedState(for: bid)
+        refreshSavedStates()
+        clearResultMessage = "已删除该应用的自动恢复状态"
+    }
+    
+    private func forceCheck() {
+        AutoResumeService.shared.forceCheck()
+        forceCheckMessage = "已检查所有应用，如需恢复插件请稍后查看。"
+        showForceCheckAlert = true
+        refreshSavedStates()
     }
 
     @ViewBuilder
