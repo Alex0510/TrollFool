@@ -114,7 +114,6 @@ final class AppListModel: ObservableObject {
         allApplications.forEach { $0.appList = self }
         _allApplications = allApplications
         performFilter()
-        AutoInjectService.shared.checkAndAutoInjectAll()
     }
 
     func performFilter() {
