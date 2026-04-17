@@ -1,4 +1,3 @@
-// BackgroundTaskService.swift
 //
 //  BackgroundTaskService.swift
 //  TrollFools
@@ -28,7 +27,7 @@ final class BackgroundTaskService: ObservableObject {
     
     func scheduleAppRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: refreshTaskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15分钟后
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         
         do {
             try BGTaskScheduler.shared.submit(request)
@@ -39,18 +38,17 @@ final class BackgroundTaskService: ObservableObject {
     }
     
     private func handleAppRefresh(task: BGAppRefreshTask) {
-        // 设置过期处理
         task.expirationHandler = { [weak self] in
-            self?.scheduleAppRefresh()
+            DispatchQueue.main.async {
+                self?.scheduleAppRefresh()
+            }
             task.setTaskCompleted(success: false)
         }
         
-        // 执行后台检查
         DispatchQueue.global(qos: .background).async {
             AutoInjectService.shared.checkAndAutoInjectAll()
             
             DispatchQueue.main.async {
-                // 重新调度下一次刷新
                 self.scheduleAppRefresh()
                 task.setTaskCompleted(success: true)
             }
