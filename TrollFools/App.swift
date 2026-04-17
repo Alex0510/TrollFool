@@ -1,12 +1,13 @@
 //
 //  App.swift
-//  TrollFools
+//  TrollFool
 //
 //  Created by 82Flex on 2024/10/30.
 //
 
 import Combine
 import Foundation
+import MobileCoreServices
 
 final class App: ObservableObject {
     let bid: String
@@ -16,7 +17,6 @@ final class App: ObservableObject {
     let teamID: String
     let url: URL
     let version: String?
-    let isAdvertisement: Bool
 
     @Published var isDetached: Bool
     @Published var isAllowedToAttachOrDetach: Bool
@@ -32,6 +32,17 @@ final class App: ObservableObject {
     lazy var isFromTroll: Bool = isSystem && !isFromApple
     lazy var isRemovable: Bool = url.path.contains("/var/containers/Bundle/Application/")
 
+    var dataContainerURL: URL? {
+        guard let proxy = LSApplicationProxy(forIdentifier: bid) else { return nil }
+        return proxy.value(forKey: "dataContainerURL") as? URL
+    }
+
+    var appGroupContainerURL: URL? {
+        guard let proxy = LSApplicationProxy(forIdentifier: bid) else { return nil }
+        guard let groupDict = proxy.value(forKey: "groupContainerURLs") as? [String: URL] else { return nil }
+        return groupDict.values.first
+    }
+
     weak var appList: AppListModel?
     private var cancellables: Set<AnyCancellable> = []
     private static let reloadSubject = PassthroughSubject<String, Never>()
@@ -43,8 +54,7 @@ final class App: ObservableObject {
         teamID: String,
         url: URL,
         version: String? = nil,
-        alternateIcon: UIImage? = nil,
-        isAdvertisement: Bool = false
+        alternateIcon: UIImage? = nil
     ) {
         self.bid = bid
         self.name = name
@@ -57,7 +67,6 @@ final class App: ObservableObject {
         self.isInjected = InjectorV3.main.checkIsInjectedAppBundle(url)
         self.hasPersistedAssets = InjectorV3.main.hasPersistedAssets(bid: bid)
         self.alternateIcon = alternateIcon
-        self.isAdvertisement = isAdvertisement
         self.latinName = name
             .applyingTransform(.toLatin, reverse: false)?
             .applyingTransform(.stripDiacritics, reverse: false)?
