@@ -423,6 +423,11 @@ struct EjectListView: View {
 
             ejectList.app.reload()
             ejectList.reload()
+
+            // 保存当前应用的所有已启用插件状态
+            let enabledURLs = InjectorV3.main.injectedAssetURLsInBundle(ejectList.app.url)
+            AutoResumeService.shared.saveEnabledPlugIns(for: ejectList.app, enabledURLs: enabledURLs)
+
         } catch {
             DDLogError("\(error)", ddlog: InjectorV3.main.logger)
 
@@ -470,6 +475,11 @@ struct EjectListView: View {
 
             ejectList.app.reload()
             ejectList.reload()
+
+            // 保存当前应用的所有已启用插件状态
+            let enabledURLs = InjectorV3.main.injectedAssetURLsInBundle(ejectList.app.url)
+            AutoResumeService.shared.saveEnabledPlugIns(for: ejectList.app, enabledURLs: enabledURLs)
+
         } catch {
             DDLogError("\(error)", ddlog: InjectorV3.main.logger)
 
@@ -525,6 +535,10 @@ struct EjectListView: View {
                     DispatchQueue.main.async {
                         ejectList.app.reload()
                         ejectList.reload()
+
+                        // 保存当前应用的所有已启用插件状态
+                        let enabledURLs = InjectorV3.main.injectedAssetURLsInBundle(ejectList.app.url)
+                        AutoResumeService.shared.saveEnabledPlugIns(for: ejectList.app, enabledURLs: enabledURLs)
 
                         isEnablingAll = false
                         isDisablingAll = false
@@ -598,11 +612,15 @@ struct EjectListView: View {
                     DispatchQueue.main.async {
                         ejectList.app.reload()
                         ejectList.reload()
-                        
+
+                        // 保存当前应用的所有已启用插件状态（禁用后应为空）
+                        let enabledURLs = InjectorV3.main.injectedAssetURLsInBundle(ejectList.app.url)
+                        AutoResumeService.shared.saveEnabledPlugIns(for: ejectList.app, enabledURLs: enabledURLs)
+
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                             AutoInjectService.shared.checkAndAutoInjectAll()
                         }
-                        
+
                         isEnablingAll = false
                         isDisablingAll = false
                         isDeletingAll = false
