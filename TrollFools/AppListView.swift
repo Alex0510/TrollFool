@@ -264,7 +264,6 @@ struct AppListView: View {
                 }
             }
 
-            // 原有“仅显示已注入”按钮
             ToolbarItem(placement: .navigationBarTrailing) {
                 if !appList.isSelectorMode {
                     Button {
@@ -284,7 +283,6 @@ struct AppListView: View {
                 }
             }
 
-            // 批量操作菜单（中文）——增加“一键移除所有插件”
             ToolbarItem(placement: .navigationBarTrailing) {
                 if !appList.isSelectorMode {
                     Menu {
@@ -298,7 +296,6 @@ struct AppListView: View {
                         }
                         .disabled(isBatchProcessing)
 
-                        // 新增：一键移除所有插件
                         Button(action: batchRemoveAll) {
                             Label("移除所有插件", systemImage: "trash")
                         }
@@ -498,7 +495,7 @@ struct AppListView: View {
             : "搜索…")
     }
 
-    // MARK: - 批量操作（作用于所有支持注入的应用，包括巨魔应用）
+    // MARK: - 批量操作
 
     private func batchEnableAll() {
         let allApps = appList.allSupportedApps
@@ -512,7 +509,6 @@ struct AppListView: View {
         performBatchOperation(on: allApps, enable: false)
     }
 
-    // 新增：一键移除所有插件（删除持久化文件并推出已注入的插件）
     private func batchRemoveAll() {
         let allApps = appList.allSupportedApps
         guard !allApps.isEmpty else { return }
@@ -532,7 +528,6 @@ struct AppListView: View {
                     var didSomething = false
 
                     if enable {
-                        // 启用所有持久化插件（重新注入已存在的、但未注入的插件）
                         let persistedURLs = InjectorV3.main.persistedAssetURLs(bid: app.bid)
                         let injectedURLs = InjectorV3.main.injectedAssetURLsInBundle(app.url)
                         let toInject = persistedURLs.filter { !injectedURLs.contains($0) }
@@ -541,7 +536,6 @@ struct AppListView: View {
                             didSomething = true
                         }
                     } else {
-                        // 禁用所有已注入的插件（但不删除文件）
                         let injectedURLs = InjectorV3.main.injectedAssetURLsInBundle(app.url)
                         if !injectedURLs.isEmpty {
                             try injector.ejectAll(shouldDesist: false)
@@ -552,6 +546,9 @@ struct AppListView: View {
                     if didSomething {
                         DispatchQueue.main.async {
                             app.reload()
+                            // 保存该应用的所有已启用插件状态
+                            let enabledURLs = InjectorV3.main.injectedAssetURLsInBundle(app.url)
+                            AutoResumeService.shared.saveEnabledPlugIns(for: app, enabledURLs: enabledURLs)
                         }
                         successCount += 1
                     }
@@ -577,7 +574,6 @@ struct AppListView: View {
         }
     }
 
-    // 新增：批量移除所有插件（彻底删除）
     private func performBatchRemove(on apps: [App]) {
         isBatchProcessing = true
 
@@ -588,10 +584,10 @@ struct AppListView: View {
             for app in apps {
                 do {
                     let injector = try InjectorV3(app.url)
-                    // 使用 ejectAll(shouldDesist: true) 会同时移除已注入的插件和持久化文件
                     try injector.ejectAll(shouldDesist: true)
                     DispatchQueue.main.async {
                         app.reload()
+                        AutoResumeService.shared.removeEnabledPlugIns(for: app)
                     }
                     successCount += 1
                 } catch {
@@ -618,7 +614,7 @@ struct URLIdentifiable: Identifiable {
     var id: String { url.absoluteString }
 }
 
-// MARK: - 不支持的应用详情页（带图标）
+// MARK: - 不支持的应用详情页
 struct UnsupportedAppsView: View {
     let unsupportedApps: [App]
     @Environment(\.presentationMode) var presentationMode
@@ -628,7 +624,6 @@ struct UnsupportedAppsView: View {
             List {
                 ForEach(unsupportedApps, id: \.bid) { app in
                     HStack(spacing: 12) {
-                        // 应用图标
                         Image(uiImage: app.icon ?? UIImage())
                             .resizable()
                             .frame(width: 32, height: 32)
