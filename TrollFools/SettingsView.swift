@@ -31,6 +31,9 @@ struct SettingsView: View {
     @State private var showForceCheckAlert = false
     @State private var forceCheckMessage = ""
 
+    // 折叠状态
+    @State private var isExpanded: Bool = true
+
     var body: some View {
         NavigationView {
             Form {
@@ -75,55 +78,70 @@ struct SettingsView: View {
                         Text("\(savedStatesCount) 个应用")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
+                        
+                        // 折叠/展开按钮
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isExpanded.toggle()
+                            }
+                        }) {
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.subheadline)
+                                .foregroundColor(.accentColor)
+                                .padding(.leading, 8)
+                        }
+                        .buttonStyle(BorderlessButtonStyle())
                     }
                     
-                    if !savedStatesDetail.isEmpty {
-                        ForEach(savedStatesDetail) { state in
-                            DisclosureGroup(
-                                content: {
-                                    ForEach(state.pluginNames, id: \.self) { pluginName in
+                    if isExpanded {
+                        if !savedStatesDetail.isEmpty {
+                            ForEach(savedStatesDetail) { state in
+                                DisclosureGroup(
+                                    content: {
+                                        ForEach(state.pluginNames, id: \.self) { pluginName in
+                                            HStack {
+                                                Image(systemName: "puzzlepiece")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                Text(pluginName)
+                                                    .font(.caption)
+                                                    .lineLimit(1)
+                                                Spacer()
+                                            }
+                                            .padding(.leading, 8)
+                                        }
+                                    },
+                                    label: {
                                         HStack {
-                                            Image(systemName: "puzzlepiece")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                            Text(pluginName)
-                                                .font(.caption)
-                                                .lineLimit(1)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(state.appName)
+                                                    .font(.body)
+                                                Text(state.bid)
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
                                             Spacer()
-                                        }
-                                        .padding(.leading, 8)
-                                    }
-                                },
-                                label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(state.appName)
-                                                .font(.body)
-                                            Text(state.bid)
+                                            Text("\(state.pluginNames.count) 个插件")
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
+                                            
+                                            // 删除按钮
+                                            Button(action: {
+                                                removeSavedState(for: state.bid)
+                                            }) {
+                                                Image(systemName: "trash")
+                                                    .foregroundColor(.red)
+                                            }
+                                            .buttonStyle(BorderlessButtonStyle())
                                         }
-                                        Spacer()
-                                        Text("\(state.pluginNames.count) 个插件")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                        
-                                        // 删除按钮（替代左滑删除，兼容 iOS 14）
-                                        Button(action: {
-                                            removeSavedState(for: state.bid)
-                                        }) {
-                                            Image(systemName: "trash")
-                                                .foregroundColor(.red)
-                                        }
-                                        .buttonStyle(BorderlessButtonStyle())
                                     }
-                                }
-                            )
+                                )
+                            }
+                        } else if savedStatesCount > 0 {
+                            Text("加载中...")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
                         }
-                    } else if savedStatesCount > 0 {
-                        Text("加载中...")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
                     }
                     
                     Button(action: {
