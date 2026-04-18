@@ -10,9 +10,7 @@ import SwiftUI
 
 struct AppListCell: View {
     @EnvironmentObject var appList: AppListModel
-
     @StateObject var app: App
-
     @State private var isCleaningData = false
     @State private var cleanResultMessage: String?
 
@@ -38,16 +36,10 @@ struct AppListCell: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if #available(iOS 15, *) {
-                Image(uiImage: app.alternateIcon ?? app.icon ?? UIImage())
-                    .resizable()
-                    .frame(width: 32, height: 32)
-            } else {
-                Image(uiImage: app.alternateIcon ?? app.icon ?? UIImage())
-                    .resizable()
-                    .frame(width: 32, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
+            Image(uiImage: app.alternateIcon ?? app.icon ?? UIImage())
+                .resizable()
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
@@ -60,20 +52,12 @@ struct AppListCell: View {
                             .font(.headline)
                             .lineLimit(1)
                     }
-
                     if app.isInjected || app.hasPersistedAssets {
                         Image(systemName: app.isInjected ? "bandage" : "exclamationmark.triangle")
                             .font(.subheadline)
                             .foregroundColor(.orange)
-                            .accessibilityLabel(app.isInjected ? NSLocalizedString("Patched", comment: "") : NSLocalizedString("Includes Disabled PlugIns", comment: ""))
-                            .transition(.opacity)
                     }
                 }
-                .animation(.easeOut, value: combines(
-                    app.isInjected,
-                    app.hasPersistedAssets
-                ))
-
                 if #available(iOS 15, *) {
                     Text(highlightedId)
                         .font(.subheadline)
@@ -84,54 +68,28 @@ struct AppListCell: View {
                         .lineLimit(1)
                 }
             }
-
             Spacer()
-
             if let version = app.version {
-                if app.isUser && app.isDetached {
-                    HStack(spacing: 4) {
-                        Image(systemName: "lock")
-                            .font(.subheadline)
-                            .foregroundColor(.red)
-                            .accessibilityLabel(NSLocalizedString("Pinned Version", comment: ""))
-
-                        Text(version)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                } else {
-                    Text(version)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
+                Text(version)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
             }
         }
-        .contextMenu {
-            if !appList.isSelectorMode {
-                cellContextMenuWrapper
-            }
-        }
+        .contextMenu { if !appList.isSelectorMode { cellContextMenuWrapper } }
         .background(cellBackground)
         .alert(isPresented: .constant(cleanResultMessage != nil)) {
             Alert(
                 title: Text("清理数据"),
                 message: Text(cleanResultMessage ?? ""),
-                dismissButton: .default(Text("确定")) {
-                    cleanResultMessage = nil
-                }
+                dismissButton: .default(Text("确定")) { cleanResultMessage = nil }
             )
         }
     }
 
     @ViewBuilder
     var cellContextMenu: some View {
-        Button {
-            launch()
-        } label: {
-            Label(NSLocalizedString("Launch", comment: ""), systemImage: "command")
-        }
+        Button { launch() } label: { Label(NSLocalizedString("Launch", comment: ""), systemImage: "command") }
 
         if AppListModel.hasTrollStore && app.isAllowedToAttachOrDetach {
             if app.isDetached {
@@ -140,37 +98,33 @@ struct AppListCell: View {
                         try InjectorV3(app.url).setMetadataDetached(false)
                         app.reload()
                         appList.isRebuildNeeded = true
-                    } catch { DDLogError("\(error)", ddlog: InjectorV3.main.logger) }
-                } label: {
-                    Label(NSLocalizedString("Unlock Version", comment: ""), systemImage: "lock.open")
-                }
+                    } catch { DDLogError("\(error)") }
+                } label: { Label(NSLocalizedString("Unlock Version", comment: ""), systemImage: "lock.open") }
             } else {
                 Button {
                     do {
                         try InjectorV3(app.url).setMetadataDetached(true)
                         app.reload()
                         appList.isRebuildNeeded = true
-                    } catch { DDLogError("\(error)", ddlog: InjectorV3.main.logger) }
-                } label: {
-                    Label(NSLocalizedString("Lock Version", comment: ""), systemImage: "lock")
-                }
+                    } catch { DDLogError("\(error)") }
+                } label: { Label(NSLocalizedString("Lock Version", comment: ""), systemImage: "lock") }
             }
         }
 
         Button {
-            openInFilza(app.url)
+            openInFilza(app.url, type: .root)
         } label: {
-            if isFilzaInstalled {
+            if appList.isFilzaInstalled {
                 Label("应用目录", systemImage: "scope")
             } else {
                 Label("应用目录 (Filza未安装)", systemImage: "xmark.octagon")
             }
         }
-        .disabled(!isFilzaInstalled)
+        .disabled(!appList.isFilzaInstalled)
 
         if let dataURL = app.dataContainerURL {
             Button {
-                openInFilza(dataURL)
+                openInFilza(dataURL, type: .dataContainer)
             } label: {
                 Label("数据目录", systemImage: "folder")
             }
@@ -178,53 +132,31 @@ struct AppListCell: View {
 
         if let groupURL = app.appGroupContainerURL {
             Button {
-                openInFilza(groupURL)
+                openInFilza(groupURL, type: .appGroupContainer)
             } label: {
                 Label("应用组目录", systemImage: "folder.badge.gear")
             }
         }
 
         if app.dataContainerURL != nil || app.appGroupContainerURL != nil {
-            if #available(iOS 15, *) {
-                Button(role: .destructive) {
-                    confirmCleanData()
-                } label: {
-                    Label("彻底清理 (数据+Keychain)", systemImage: "trash.slash")
-                }
-            } else {
-                Button {
-                    confirmCleanData()
-                } label: {
-                    Label("彻底清理 (数据+Keychain)", systemImage: "trash.slash")
-                }
+            Button(role: .destructive) {
+                confirmCleanData()
+            } label: {
+                Label("彻底清理 (数据+Keychain)", systemImage: "trash.slash")
             }
         }
     }
 
     @ViewBuilder
     var cellContextMenuWrapper: some View {
-        if #available(iOS 16, *) {
-            cellContextMenu
-        } else {
-            if #available(iOS 15, *) { }
-            else {
-                cellContextMenu
-            }
-        }
+        if #available(iOS 16, *) { cellContextMenu } else { cellContextMenu }
     }
 
     @ViewBuilder
     var cellBackground: some View {
         if #available(iOS 15, *) {
-            if #available(iOS 16, *) { }
-            else {
-                Color.clear
-                    .contextMenu {
-                        if !appList.isSelectorMode {
-                            cellContextMenu
-                        }
-                    }
-                    .id(app.isDetached)
+            if #available(iOS 16, *) {} else {
+                Color.clear.contextMenu { if !appList.isSelectorMode { cellContextMenu } }.id(app.isDetached)
             }
         }
     }
@@ -233,25 +165,20 @@ struct AppListCell: View {
         LSApplicationWorkspace.default().openApplication(withBundleID: app.bid)
     }
 
-    var isFilzaInstalled: Bool { appList.isFilzaInstalled }
-
-    private func openInFilza(_ url: URL) {
-        appList.openInFilza(url)
+    private func openInFilza(_ url: URL, type: FilzaOpenType) {
+        appList.openInFilza(url, type: type)
     }
 
     private func confirmCleanData() {
         let alert = UIAlertController(
             title: "彻底清理",
-            message: "此操作将永久删除应用「\(app.name)」的以下数据：\n• 数据目录\n• 应用组目录\n• Keychain 中的所有条目\n\n此操作不可逆，确定要继续吗？",
+            message: "永久删除「\(app.name)」的数据目录、应用组目录及 Keychain 数据？\n此操作不可逆！",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        alert.addAction(UIAlertAction(title: "确认清理", style: .destructive) { _ in
-            performFullClean()
-        })
-
-        if let viewController = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController {
-            viewController.present(alert, animated: true)
+        alert.addAction(UIAlertAction(title: "确认清理", style: .destructive) { _ in performFullClean() })
+        if let vc = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+            vc.present(alert, animated: true)
         }
     }
 
@@ -259,64 +186,52 @@ struct AppListCell: View {
         isCleaningData = true
         DispatchQueue.global(qos: .userInitiated).async {
             var success = true
-            var errorMessages: [String] = []
-            let fileManager = FileManager.default
+            var errors: [String] = []
+            let fm = FileManager.default
 
-            // 1. 清理数据目录
+            // Data container
             if let dataURL = app.dataContainerURL {
                 let dataPath = dataURL.path
-                DDLogDebug("Data container path: \(dataPath)")
-                if fileManager.fileExists(atPath: dataPath) {
+                if fm.fileExists(atPath: dataPath) {
                     do {
-                        let contents = try fileManager.contentsOfDirectory(atPath: dataPath)
-                        for item in contents {
-                            let itemURL = dataURL.appendingPathComponent(item)
-                            try fileManager.removeItem(at: itemURL)
+                        let items = try fm.contentsOfDirectory(atPath: dataPath)
+                        for item in items {
+                            try fm.removeItem(at: dataURL.appendingPathComponent(item))
                         }
-                        DDLogInfo("Cleaned data directory for \(app.bid)")
+                        DDLogInfo("Cleaned data container for \(app.bid)")
                     } catch {
+                        errors.append("数据目录清理失败: \(error.localizedDescription)")
                         success = false
-                        errorMessages.append("数据目录清理失败: \(error.localizedDescription)")
-                        DDLogError("Failed to clean data directory: \(error)")
                     }
                 } else {
-                    errorMessages.append("数据目录不存在: \(dataPath)")
-                    DDLogError("Data directory does not exist: \(dataPath)")
+                    errors.append("数据目录不存在: \(dataPath)")
                 }
-            } else {
-                DDLogWarn("No data container URL for \(app.bid)")
             }
 
-            // 2. 清理应用组目录
+            // App group container
             if let groupURL = app.appGroupContainerURL {
                 let groupPath = groupURL.path
-                DDLogDebug("App group container path: \(groupPath)")
-                if fileManager.fileExists(atPath: groupPath) {
+                if fm.fileExists(atPath: groupPath) {
                     do {
-                        let contents = try fileManager.contentsOfDirectory(atPath: groupPath)
-                        for item in contents {
-                            let itemURL = groupURL.appendingPathComponent(item)
-                            try fileManager.removeItem(at: itemURL)
+                        let items = try fm.contentsOfDirectory(atPath: groupPath)
+                        for item in items {
+                            try fm.removeItem(at: groupURL.appendingPathComponent(item))
                         }
-                        DDLogInfo("Cleaned app group directory for \(app.bid)")
+                        DDLogInfo("Cleaned app group container for \(app.bid)")
                     } catch {
+                        errors.append("应用组目录清理失败: \(error.localizedDescription)")
                         success = false
-                        errorMessages.append("应用组目录清理失败: \(error.localizedDescription)")
-                        DDLogError("Failed to clean app group directory: \(error)")
                     }
                 } else {
-                    errorMessages.append("应用组目录不存在: \(groupPath)")
-                    DDLogError("App group directory does not exist: \(groupPath)")
+                    errors.append("应用组目录不存在: \(groupPath)")
                 }
-            } else {
-                DDLogWarn("No app group container URL for \(app.bid)")
             }
 
-            // 3. 清理 Keychain（使用 Security API）
-            let keychainCleared = clearKeychainUsingSecurityAPI(bundleID: app.bid, teamID: app.teamID)
-            if !keychainCleared {
+            // Keychain
+            let keychainOK = clearKeychainForApp(bundleID: app.bid, teamID: app.teamID)
+            if !keychainOK {
+                errors.append("Keychain 清理失败")
                 success = false
-                errorMessages.append("Keychain 清理失败")
             } else {
                 DDLogInfo("Cleaned keychain for \(app.bid)")
             }
@@ -327,14 +242,13 @@ struct AppListCell: View {
                     cleanResultMessage = "清理完成！\n已删除数据目录、应用组目录及 Keychain 数据。"
                     app.reload()
                 } else {
-                    cleanResultMessage = "清理部分失败：\n" + errorMessages.joined(separator: "\n")
+                    cleanResultMessage = "清理部分失败：\n" + errors.joined(separator: "\n")
                 }
             }
         }
     }
 
-    // 使用 Security API 删除属于该应用的 Keychain 条目
-    private func clearKeychainUsingSecurityAPI(bundleID: String, teamID: String) -> Bool {
+    private func clearKeychainForApp(bundleID: String, teamID: String) -> Bool {
         let secClasses: [CFString] = [
             kSecClassGenericPassword,
             kSecClassInternetPassword,
@@ -342,8 +256,7 @@ struct AppListCell: View {
             kSecClassKey,
             kSecClassIdentity
         ]
-        
-        var anySuccess = false
+        var any = false
         for secClass in secClasses {
             let query: [CFString: Any] = [
                 kSecClass: secClass,
@@ -351,33 +264,23 @@ struct AppListCell: View {
                 kSecReturnAttributes: true,
                 kSecReturnData: false
             ]
-            
             var result: CFTypeRef?
             let status = SecItemCopyMatching(query as CFDictionary, &result)
             if status == errSecSuccess, let items = result as? [[CFString: Any]] {
                 for item in items {
-                    if let accessGroup = item[kSecAttrAccessGroup] as? String {
-                        if accessGroup.contains(bundleID) || accessGroup.contains(teamID) {
-                            var deleteQuery: [CFString: Any] = [kSecClass: secClass]
-                            if let account = item[kSecAttrAccount] as? String {
-                                deleteQuery[kSecAttrAccount] = account
-                            }
-                            if let service = item[kSecAttrService] as? String {
-                                deleteQuery[kSecAttrService] = service
-                            }
-                            if let generic = item[kSecAttrGeneric] as? Data {
-                                deleteQuery[kSecAttrGeneric] = generic
-                            }
-                            let delStatus = SecItemDelete(deleteQuery as CFDictionary)
-                            if delStatus == errSecSuccess {
-                                anySuccess = true
-                                DDLogDebug("Deleted keychain item for \(bundleID): \(accessGroup)")
-                            }
+                    if let group = item[kSecAttrAccessGroup] as? String,
+                       group.contains(bundleID) || group.contains(teamID) {
+                        var delQuery: [CFString: Any] = [kSecClass: secClass]
+                        if let account = item[kSecAttrAccount] as? String { delQuery[kSecAttrAccount] = account }
+                        if let service = item[kSecAttrService] as? String { delQuery[kSecAttrService] = service }
+                        if let generic = item[kSecAttrGeneric] as? Data { delQuery[kSecAttrGeneric] = generic }
+                        if SecItemDelete(delQuery as CFDictionary) == errSecSuccess {
+                            any = true
                         }
                     }
                 }
             }
         }
-        return anySuccess
+        return any
     }
 }
