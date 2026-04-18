@@ -181,7 +181,7 @@ struct AppListCell: View {
     private func confirmCleanData() {
         let alert = UIAlertController(
             title: "彻底清理",
-            message: "永久删除「\(app.name)」的数据目录、应用组目录及 Keychain 数据？\n此操作不可逆！",
+            message: "永久删除「\(app.name)」的数据目录、应用组目录内的所有文件，以及 Keychain 数据？\n⚠️ 目录本身不会被删除，仅清空内部内容。\n此操作不可逆！",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
@@ -198,56 +198,58 @@ struct AppListCell: View {
             var errors: [String] = []
             let fm = FileManager.default
 
-            // 辅助函数：清空目录内容，保留目录本身
-            func emptyDirectory(at url: URL) -> Bool {
+            // 安全地清空目录内容（保留目录本身）
+            func emptyDirectory(at url: URL, name: String) -> Bool {
                 guard fm.fileExists(atPath: url.path) else {
-                    errors.append("目录不存在: \(url.path)")
+                    errors.append("\(name) 目录不存在: \(url.path)")
                     return false
                 }
                 do {
                     let items = try fm.contentsOfDirectory(atPath: url.path)
                     for item in items {
+                        // 跳过 . 和 .. 防止意外
+                        if item == "." || item == ".." { continue }
                         let itemURL = url.appendingPathComponent(item)
                         try fm.removeItem(at: itemURL)
                     }
                     return true
                 } catch {
-                    errors.append("清空目录失败 (\(url.lastPathComponent)): \(error.localizedDescription)")
+                    errors.append("清空 \(name) 失败: \(error.localizedDescription)")
                     return false
                 }
             }
 
             // 1. 清空数据目录
             if let dataURL = app.dataContainerURL {
-                if !emptyDirectory(at: dataURL) {
+                if !emptyDirectory(at: dataURL, name: "数据目录") {
                     success = false
                 } else {
-                    DDLogInfo("Cleaned data container for \(app.bid)")
+                    DDLogInfo("数据目录已清空: \(dataURL.path)")
                 }
             }
 
             // 2. 清空应用组目录
             if let groupURL = app.appGroupContainerURL {
-                if !emptyDirectory(at: groupURL) {
+                if !emptyDirectory(at: groupURL, name: "应用组目录") {
                     success = false
                 } else {
-                    DDLogInfo("Cleaned app group container for \(app.bid)")
+                    DDLogInfo("应用组目录已清空: \(groupURL.path)")
                 }
             }
 
             // 3. 清理 Keychain
             let keychainOK = clearKeychainForApp(bundleID: app.bid, teamID: app.teamID)
             if !keychainOK {
-                errors.append("Keychain 清理失败")
+                errors.append("Keychain 清理失败（可能没有条目或权限不足）")
                 success = false
             } else {
-                DDLogInfo("Cleaned keychain for \(app.bid)")
+                DDLogInfo("Keychain 已清理: \(app.bid)")
             }
 
             DispatchQueue.main.async {
                 isCleaningData = false
                 if success {
-                    cleanResultMessage = "清理完成！\n已清空数据目录、应用组目录及 Keychain 数据。"
+                    cleanResultMessage = "清理完成！\n数据目录、应用组目录已清空，Keychain 已清理。"
                     app.reload()
                 } else {
                     cleanResultMessage = "清理部分失败：\n" + errors.joined(separator: "\n")
@@ -256,14 +258,15 @@ struct AppListCell: View {
         }
     }
 
+    // MARK: - Keychain 清理（增强版）
     private func clearKeychainForApp(bundleID: String, teamID: String) -> Bool {
-        // 可能的 access group 前缀
+        // 可能的 access group 精确值
         let possibleGroups = [
             "\(teamID).\(bundleID)",
             teamID,
             bundleID
         ].filter { !$0.isEmpty }
-        
+
         let secClasses: [CFString] = [
             kSecClassGenericPassword,
             kSecClassInternetPassword,
@@ -271,79 +274,63 @@ struct AppListCell: View {
             kSecClassKey,
             kSecClassIdentity
         ]
-        
-        var anySuccess = false
-        
+
+        var anyDeleted = false
+
+        // 尝试精确匹配
         for secClass in secClasses {
             for group in possibleGroups {
-                // 查询属于该 access group 的所有条目
                 let query: [CFString: Any] = [
                     kSecClass: secClass,
                     kSecAttrAccessGroup: group,
                     kSecMatchLimit: kSecMatchLimitAll,
-                    kSecReturnAttributes: true,
-                    kSecReturnData: false
+                    kSecReturnAttributes: true
                 ]
                 var result: CFTypeRef?
                 let status = SecItemCopyMatching(query as CFDictionary, &result)
                 if status == errSecSuccess, let items = result as? [[CFString: Any]] {
                     for item in items {
                         var delQuery: [CFString: Any] = [kSecClass: secClass]
-                        if let account = item[kSecAttrAccount] as? String { delQuery[kSecAttrAccount] = account }
-                        if let service = item[kSecAttrService] as? String { delQuery[kSecAttrService] = service }
-                        if let generic = item[kSecAttrGeneric] as? Data { delQuery[kSecAttrGeneric] = generic }
+                        if let acc = item[kSecAttrAccount] as? String { delQuery[kSecAttrAccount] = acc }
+                        if let svc = item[kSecAttrService] as? String { delQuery[kSecAttrService] = svc }
                         delQuery[kSecAttrAccessGroup] = group
-                        let delStatus = SecItemDelete(delQuery as CFDictionary)
-                        if delStatus == errSecSuccess {
-                            anySuccess = true
-                            DDLogDebug("Deleted keychain item for group \(group)")
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Fallback: 如果精确匹配失败，尝试模糊匹配（遍历所有条目）
-        if !anySuccess {
-            anySuccess = fallbackClearKeychain(bundleID: bundleID, teamID: teamID)
-        }
-        
-        return anySuccess
-    }
-    
-    private func fallbackClearKeychain(bundleID: String, teamID: String) -> Bool {
-        let secClasses: [CFString] = [
-            kSecClassGenericPassword,
-            kSecClassInternetPassword,
-            kSecClassCertificate,
-            kSecClassKey,
-            kSecClassIdentity
-        ]
-        var any = false
-        for secClass in secClasses {
-            let query: [CFString: Any] = [
-                kSecClass: secClass,
-                kSecMatchLimit: kSecMatchLimitAll,
-                kSecReturnAttributes: true,
-                kSecReturnData: false
-            ]
-            var result: CFTypeRef?
-            let status = SecItemCopyMatching(query as CFDictionary, &result)
-            if status == errSecSuccess, let items = result as? [[CFString: Any]] {
-                for item in items {
-                    if let group = item[kSecAttrAccessGroup] as? String,
-                       group.contains(bundleID) || group.contains(teamID) {
-                        var delQuery: [CFString: Any] = [kSecClass: secClass]
-                        if let account = item[kSecAttrAccount] as? String { delQuery[kSecAttrAccount] = account }
-                        if let service = item[kSecAttrService] as? String { delQuery[kSecAttrService] = service }
-                        if let generic = item[kSecAttrGeneric] as? Data { delQuery[kSecAttrGeneric] = generic }
                         if SecItemDelete(delQuery as CFDictionary) == errSecSuccess {
-                            any = true
+                            anyDeleted = true
+                            DDLogDebug("删除 Keychain 条目: group=\(group), class=\(secClass)")
                         }
                     }
                 }
             }
         }
-        return any
+
+        // 如果精确匹配没有删除任何内容，则尝试模糊匹配（遍历所有条目）
+        if !anyDeleted {
+            DDLogDebug("精确匹配未找到条目，尝试模糊匹配...")
+            for secClass in secClasses {
+                let query: [CFString: Any] = [
+                    kSecClass: secClass,
+                    kSecMatchLimit: kSecMatchLimitAll,
+                    kSecReturnAttributes: true
+                ]
+                var result: CFTypeRef?
+                let status = SecItemCopyMatching(query as CFDictionary, &result)
+                if status == errSecSuccess, let items = result as? [[CFString: Any]] {
+                    for item in items {
+                        if let group = item[kSecAttrAccessGroup] as? String,
+                           group.contains(bundleID) || group.contains(teamID) {
+                            var delQuery: [CFString: Any] = [kSecClass: secClass]
+                            if let acc = item[kSecAttrAccount] as? String { delQuery[kSecAttrAccount] = acc }
+                            if let svc = item[kSecAttrService] as? String { delQuery[kSecAttrService] = svc }
+                            if SecItemDelete(delQuery as CFDictionary) == errSecSuccess {
+                                anyDeleted = true
+                                DDLogDebug("模糊匹配删除 Keychain 条目: group=\(group)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return anyDeleted
     }
 }
