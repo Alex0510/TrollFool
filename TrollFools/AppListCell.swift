@@ -181,7 +181,7 @@ struct AppListCell: View {
     private func confirmCleanData() {
         let alert = UIAlertController(
             title: "彻底清理",
-            message: "永久删除「\(app.name)」的用户数据（Documents/Library/Caches/tmp）及 Keychain 数据？\n⚠️ 应用容器根目录不会被删除。\n此操作不可逆！",
+            message: "永久删除「\(app.name)」的用户数据（Documents/Library/Caches/tmp）及 Keychain 数据？\n应用组目录内容也会被清空。\n⚠️ 容器根目录及系统元数据文件将被保留。\n此操作不可逆！",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
@@ -191,7 +191,7 @@ struct AppListCell: View {
         }
     }
 
-    // MARK: - 核心清理逻辑（修正版）
+    // MARK: - 安全清空目录（保留根目录及 .com.apple.mobile_container_manager.metadata.plist）
     private func performFullClean() {
         isCleaningData = true
         DispatchQueue.global(qos: .userInitiated).async {
@@ -199,8 +199,8 @@ struct AppListCell: View {
             var errors: [String] = []
             let fm = FileManager.default
 
-            // 清空指定目录下的所有内容（保留目录本身）
-            func clearDirectoryContents(at url: URL, name: String) -> Bool {
+            // 清空目录内容，但保留根目录本身以及特定的系统文件
+            func clearDirectoryContentsPreservingRoot(at url: URL, name: String, preserveMetadata: Bool = true) -> Bool {
                 guard fm.fileExists(atPath: url.path) else {
                     errors.append("\(name) 目录不存在: \(url.path)")
                     return false
@@ -208,6 +208,10 @@ struct AppListCell: View {
                 do {
                     let items = try fm.contentsOfDirectory(atPath: url.path)
                     for item in items {
+                        // 跳过保留的元数据文件
+                        if preserveMetadata && item == ".com.apple.mobile_container_manager.metadata.plist" {
+                            continue
+                        }
                         if item == "." || item == ".." { continue }
                         let itemURL = url.appendingPathComponent(item)
                         try fm.removeItem(at: itemURL)
@@ -219,34 +223,34 @@ struct AppListCell: View {
                 }
             }
 
-            // 1. 清空数据容器的标准子目录（保留根目录）
+            // 1. 数据容器：只清空标准子目录，根目录不动
             if let dataURL = app.dataContainerURL {
                 let subdirs = ["Documents", "Library", "Caches", "tmp"]
                 for sub in subdirs {
                     let subURL = dataURL.appendingPathComponent(sub)
                     if fm.fileExists(atPath: subURL.path) {
-                        if !clearDirectoryContents(at: subURL, name: "数据目录/\(sub)") {
+                        // 子目录内没有需要保留的系统元数据，直接清空所有内容
+                        if !clearDirectoryContentsPreservingRoot(at: subURL, name: "数据目录/\(sub)", preserveMetadata: false) {
                             success = false
                         } else {
                             DDLogInfo("清空: \(subURL.path)")
                         }
                     } else {
-                        // 目录不存在则忽略（不是错误）
                         DDLogDebug("目录不存在: \(subURL.path)")
                     }
                 }
             }
 
-            // 2. 清空应用组目录（清空其下所有内容，但保留目录本身）
+            // 2. 应用组容器：清空所有内容，但保留根目录及 .com.apple.mobile_container_manager.metadata.plist
             if let groupURL = app.appGroupContainerURL {
-                if !clearDirectoryContents(at: groupURL, name: "应用组目录") {
+                if !clearDirectoryContentsPreservingRoot(at: groupURL, name: "应用组目录", preserveMetadata: true) {
                     success = false
                 } else {
                     DDLogInfo("应用组目录已清空: \(groupURL.path)")
                 }
             }
 
-            // 3. 清理 Keychain
+            // 3. Keychain 清理
             let keychainOK = clearKeychainForApp(bundleID: app.bid, teamID: app.teamID)
             if !keychainOK {
                 errors.append("Keychain 清理失败（可能没有条目或权限不足）")
@@ -258,7 +262,7 @@ struct AppListCell: View {
             DispatchQueue.main.async {
                 isCleaningData = false
                 if success {
-                    cleanResultMessage = "清理完成！\n已清空应用数据（Documents/Library/Caches/tmp）及 Keychain。"
+                    cleanResultMessage = "清理完成！\n已清空应用数据（Documents/Library/Caches/tmp）及 Keychain。\n应用组目录内容已清空，容器结构完整。"
                     app.reload()
                 } else {
                     cleanResultMessage = "清理部分失败：\n" + errors.joined(separator: "\n")
