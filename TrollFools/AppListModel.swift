@@ -209,19 +209,36 @@ final class AppListModel: ObservableObject {
 }
 
 extension AppListModel {
+    /// 在 Filza 中打开指定 URL
     func openInFilza(_ url: URL) {
-        guard let filzaURL else {
+        // 获取绝对路径并解析符号链接
+        let resolvedPath = url.resolvingSymlinksInPath().path
+        guard resolvedPath.hasPrefix("/") else {
+            DDLogError("Invalid path for Filza: \(resolvedPath)")
             return
         }
-
-        let fileURL: URL
-        if #available(iOS 16, *) {
-            fileURL = filzaURL.appending(path: url.path)
-        } else {
-            fileURL = URL(string: filzaURL.absoluteString + (url.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""))!
+        
+        // URL 编码路径
+        guard let encodedPath = resolvedPath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            DDLogError("Failed to encode path: \(resolvedPath)")
+            return
         }
-
-        UIApplication.shared.open(fileURL)
+        
+        let filzaURLString = "filza://view" + encodedPath
+        guard let filzaURL = URL(string: filzaURLString) else {
+            DDLogError("Failed to construct Filza URL: \(filzaURLString)")
+            return
+        }
+        
+        if UIApplication.shared.canOpenURL(filzaURL) {
+            UIApplication.shared.open(filzaURL) { success in
+                if !success {
+                    DDLogError("Failed to open Filza with URL: \(filzaURL)")
+                }
+            }
+        } else {
+            DDLogError("Filza is not installed or cannot open URL: \(filzaURL)")
+        }
     }
 
     func rebuildIconCache() {
