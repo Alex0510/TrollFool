@@ -244,7 +244,7 @@ struct AppListCell: View {
     private func confirmCleanData() {
         let alert = UIAlertController(
             title: "彻底清理",
-            message: "此操作将永久删除应用「\(app.name)」的以下数据：\n• 数据目录 (\(app.dataContainerURL?.lastPathComponent ?? "未知"))\n• 应用组目录 (\(app.appGroupContainerURL?.lastPathComponent ?? "无"))\n• Keychain 中的所有条目\n\n此操作不可逆，确定要继续吗？",
+            message: "此操作将永久删除应用「\(app.name)」的以下数据：\n• 数据目录\n• 应用组目录\n• Keychain 中的所有条目\n\n此操作不可逆，确定要继续吗？",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
@@ -265,40 +265,60 @@ struct AppListCell: View {
             var errorMessages: [String] = []
             let fileManager = FileManager.default
 
-            // 1. 清理数据目录
+            // 1. 清理数据目录（绝对路径）
             if let dataURL = app.dataContainerURL {
-                do {
-                    let contents = try fileManager.contentsOfDirectory(atPath: dataURL.path)
-                    for item in contents {
-                        let itemURL = dataURL.appendingPathComponent(item)
-                        try fileManager.removeItem(at: itemURL)
+                let dataPath = dataURL.path
+                DDLogDebug("Data container path: \(dataPath)")
+                if fileManager.fileExists(atPath: dataPath) {
+                    do {
+                        let contents = try fileManager.contentsOfDirectory(atPath: dataPath)
+                        for item in contents {
+                            let itemURL = URL(fileURLWithPath: dataPath).appendingPathComponent(item)
+                            try fileManager.removeItem(at: itemURL)
+                        }
+                        DDLogInfo("Cleaned data directory for \(app.bid)")
+                    } catch {
+                        success = false
+                        errorMessages.append("数据目录清理失败: \(error.localizedDescription)")
+                        DDLogError("Failed to clean data directory: \(error)")
                     }
-                    DDLogInfo("Cleaned data directory for \(app.bid)")
-                } catch {
+                } else {
                     success = false
-                    errorMessages.append("数据目录清理失败: \(error.localizedDescription)")
-                    DDLogError("Failed to clean data directory: \(error)")
+                    errorMessages.append("数据目录不存在: \(dataPath)")
+                    DDLogError("Data directory does not exist: \(dataPath)")
                 }
+            } else {
+                DDLogWarn("No data container URL for \(app.bid)")
             }
 
-            // 2. 清理应用组目录
+            // 2. 清理应用组目录（绝对路径）
             if let groupURL = app.appGroupContainerURL {
-                do {
-                    let contents = try fileManager.contentsOfDirectory(atPath: groupURL.path)
-                    for item in contents {
-                        let itemURL = groupURL.appendingPathComponent(item)
-                        try fileManager.removeItem(at: itemURL)
+                let groupPath = groupURL.path
+                DDLogDebug("App group container path: \(groupPath)")
+                if fileManager.fileExists(atPath: groupPath) {
+                    do {
+                        let contents = try fileManager.contentsOfDirectory(atPath: groupPath)
+                        for item in contents {
+                            let itemURL = URL(fileURLWithPath: groupPath).appendingPathComponent(item)
+                            try fileManager.removeItem(at: itemURL)
+                        }
+                        DDLogInfo("Cleaned app group directory for \(app.bid)")
+                    } catch {
+                        success = false
+                        errorMessages.append("应用组目录清理失败: \(error.localizedDescription)")
+                        DDLogError("Failed to clean app group directory: \(error)")
                     }
-                    DDLogInfo("Cleaned app group directory for \(app.bid)")
-                } catch {
+                } else {
                     success = false
-                    errorMessages.append("应用组目录清理失败: \(error.localizedDescription)")
-                    DDLogError("Failed to clean app group directory: \(error)")
+                    errorMessages.append("应用组目录不存在: \(groupPath)")
+                    DDLogError("App group directory does not exist: \(groupPath)")
                 }
+            } else {
+                DDLogWarn("No app group container URL for \(app.bid)")
             }
 
-            // 3. 清理 Keychain
-            let keychainCleared = clearKeychainForApp(bundleID: app.bid, teamID: app.teamID)
+            // 3. 清理 Keychain（使用 Security API）
+            let keychainCleared = clearKeychainUsingSecurityAPI(bundleID: app.bid, teamID: app.teamID)
             if !keychainCleared {
                 success = false
                 errorMessages.append("Keychain 清理失败")
@@ -319,34 +339,62 @@ struct AppListCell: View {
         }
     }
 
-    // 清除指定应用的 Keychain 条目（使用 AuxiliaryExecute.spawn 以 root 权限执行 sqlite3）
-    private func clearKeychainForApp(bundleID: String, teamID: String) -> Bool {
-        // 方法：使用 sqlite3 删除 Keychain 数据库中属于该应用或团队的记录
-        let possiblePrefixes = [teamID, "\(teamID).\(bundleID)", teamID.components(separatedBy: ".").first ?? bundleID]
-        var conditions = possiblePrefixes.map { "agrp LIKE '\($0)%'" }.joined(separator: " OR ")
-        if conditions.isEmpty {
-            conditions = "agrp LIKE '%\(bundleID)%'"
+    // 使用 Security API 删除属于该应用的 Keychain 条目
+    private func clearKeychainUsingSecurityAPI(bundleID: String, teamID: String) -> Bool {
+        // 方法：遍历所有 Keychain 类，删除匹配 access group 的条目
+        let secClasses: [CFString] = [
+            kSecClassGenericPassword,
+            kSecClassInternetPassword,
+            kSecClassCertificate,
+            kSecClassKey,
+            kSecClassIdentity
+        ]
+        
+        var success = false
+        for secClass in secClasses {
+            // 查询所有条目
+            let query: [CFString: Any] = [
+                kSecClass: secClass,
+                kSecMatchLimit: kSecMatchLimitAll,
+                kSecReturnAttributes: true,
+                kSecReturnData: false
+            ]
+            
+            var result: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            if status == errSecSuccess, let items = result as? [[CFString: Any]] {
+                for item in items {
+                    // 获取 access group
+                    if let accessGroup = item[kSecAttrAccessGroup] as? String {
+                        // 检查是否属于目标应用（access group 包含 bundleID 或 teamID）
+                        if accessGroup.contains(bundleID) || accessGroup.contains(teamID) {
+                            // 构建删除查询
+                            var deleteQuery: [CFString: Any] = [kSecClass: secClass]
+                            // 复制其他唯一标识属性
+                            if let account = item[kSecAttrAccount] as? String {
+                                deleteQuery[kSecAttrAccount] = account
+                            }
+                            if let service = item[kSecAttrService] as? String {
+                                deleteQuery[kSecAttrService] = service
+                            }
+                            if let generic = item[kSecAttrGeneric] as? Data {
+                                deleteQuery[kSecAttrGeneric] = generic
+                            }
+                            // 执行删除
+                            let delStatus = SecItemDelete(deleteQuery as CFDictionary)
+                            if delStatus == errSecSuccess {
+                                success = true
+                                DDLogDebug("Deleted keychain item for \(bundleID): \(accessGroup)")
+                            } else {
+                                DDLogDebug("Failed to delete keychain item: \(delStatus)")
+                            }
+                        }
+                    }
+                }
+            } else if status != errSecItemNotFound {
+                DDLogError("Failed to query keychain class \(secClass): \(status)")
+            }
         }
-        
-        let sql = "DELETE FROM genp WHERE \(conditions); DELETE FROM cert WHERE \(conditions); DELETE FROM keys WHERE \(conditions); DELETE FROM idents WHERE \(conditions);"
-        let dbPath = "/var/Keychains/keychain-2.db"
-        
-        let receipt = AuxiliaryExecute.spawn(
-            command: "/usr/bin/sqlite3",
-            args: [dbPath, sql],
-            environment: [:],
-            workingDirectory: nil,
-            personaOptions: AuxiliaryExecute.PersonaOptions(uid: 0, gid: 0),
-            timeout: 10,
-            ddlog: InjectorV3.main.logger
-        )
-        
-        if case .exit(0) = receipt.terminationReason {
-            DDLogInfo("Keychain cleared for \(bundleID)")
-            return true
-        } else {
-            DDLogError("Failed to clear keychain for \(bundleID): exit code: \(receipt.terminationReason), stderr: \(receipt.stderr)")
-            return false
-        }
+        return success
     }
 }
