@@ -7,7 +7,6 @@
 
 import CocoaLumberjackSwift
 import SwiftUI
-import LocalAuthentication
 
 struct AppListCell: View {
     @EnvironmentObject var appList: AppListModel
@@ -240,7 +239,6 @@ struct AppListCell: View {
         appList.openInFilza(url)
     }
 
-    // 确认清理弹窗
     private func confirmCleanData() {
         let alert = UIAlertController(
             title: "彻底清理",
@@ -257,7 +255,6 @@ struct AppListCell: View {
         }
     }
 
-    // 执行彻底清理
     private func performFullClean() {
         isCleaningData = true
         DispatchQueue.global(qos: .userInitiated).async {
@@ -265,7 +262,7 @@ struct AppListCell: View {
             var errorMessages: [String] = []
             let fileManager = FileManager.default
 
-            // 1. 清理数据目录（绝对路径）
+            // 1. 清理数据目录
             if let dataURL = app.dataContainerURL {
                 let dataPath = dataURL.path
                 DDLogDebug("Data container path: \(dataPath)")
@@ -273,7 +270,7 @@ struct AppListCell: View {
                     do {
                         let contents = try fileManager.contentsOfDirectory(atPath: dataPath)
                         for item in contents {
-                            let itemURL = URL(fileURLWithPath: dataPath).appendingPathComponent(item)
+                            let itemURL = dataURL.appendingPathComponent(item)
                             try fileManager.removeItem(at: itemURL)
                         }
                         DDLogInfo("Cleaned data directory for \(app.bid)")
@@ -283,7 +280,6 @@ struct AppListCell: View {
                         DDLogError("Failed to clean data directory: \(error)")
                     }
                 } else {
-                    success = false
                     errorMessages.append("数据目录不存在: \(dataPath)")
                     DDLogError("Data directory does not exist: \(dataPath)")
                 }
@@ -291,7 +287,7 @@ struct AppListCell: View {
                 DDLogWarn("No data container URL for \(app.bid)")
             }
 
-            // 2. 清理应用组目录（绝对路径）
+            // 2. 清理应用组目录
             if let groupURL = app.appGroupContainerURL {
                 let groupPath = groupURL.path
                 DDLogDebug("App group container path: \(groupPath)")
@@ -299,7 +295,7 @@ struct AppListCell: View {
                     do {
                         let contents = try fileManager.contentsOfDirectory(atPath: groupPath)
                         for item in contents {
-                            let itemURL = URL(fileURLWithPath: groupPath).appendingPathComponent(item)
+                            let itemURL = groupURL.appendingPathComponent(item)
                             try fileManager.removeItem(at: itemURL)
                         }
                         DDLogInfo("Cleaned app group directory for \(app.bid)")
@@ -309,7 +305,6 @@ struct AppListCell: View {
                         DDLogError("Failed to clean app group directory: \(error)")
                     }
                 } else {
-                    success = false
                     errorMessages.append("应用组目录不存在: \(groupPath)")
                     DDLogError("App group directory does not exist: \(groupPath)")
                 }
@@ -330,7 +325,6 @@ struct AppListCell: View {
                 isCleaningData = false
                 if success {
                     cleanResultMessage = "清理完成！\n已删除数据目录、应用组目录及 Keychain 数据。"
-                    // 刷新应用状态
                     app.reload()
                 } else {
                     cleanResultMessage = "清理部分失败：\n" + errorMessages.joined(separator: "\n")
@@ -341,7 +335,6 @@ struct AppListCell: View {
 
     // 使用 Security API 删除属于该应用的 Keychain 条目
     private func clearKeychainUsingSecurityAPI(bundleID: String, teamID: String) -> Bool {
-        // 方法：遍历所有 Keychain 类，删除匹配 access group 的条目
         let secClasses: [CFString] = [
             kSecClassGenericPassword,
             kSecClassInternetPassword,
@@ -350,9 +343,8 @@ struct AppListCell: View {
             kSecClassIdentity
         ]
         
-        var success = false
+        var anySuccess = false
         for secClass in secClasses {
-            // 查询所有条目
             let query: [CFString: Any] = [
                 kSecClass: secClass,
                 kSecMatchLimit: kSecMatchLimitAll,
@@ -364,13 +356,9 @@ struct AppListCell: View {
             let status = SecItemCopyMatching(query as CFDictionary, &result)
             if status == errSecSuccess, let items = result as? [[CFString: Any]] {
                 for item in items {
-                    // 获取 access group
                     if let accessGroup = item[kSecAttrAccessGroup] as? String {
-                        // 检查是否属于目标应用（access group 包含 bundleID 或 teamID）
                         if accessGroup.contains(bundleID) || accessGroup.contains(teamID) {
-                            // 构建删除查询
                             var deleteQuery: [CFString: Any] = [kSecClass: secClass]
-                            // 复制其他唯一标识属性
                             if let account = item[kSecAttrAccount] as? String {
                                 deleteQuery[kSecAttrAccount] = account
                             }
@@ -380,21 +368,16 @@ struct AppListCell: View {
                             if let generic = item[kSecAttrGeneric] as? Data {
                                 deleteQuery[kSecAttrGeneric] = generic
                             }
-                            // 执行删除
                             let delStatus = SecItemDelete(deleteQuery as CFDictionary)
                             if delStatus == errSecSuccess {
-                                success = true
+                                anySuccess = true
                                 DDLogDebug("Deleted keychain item for \(bundleID): \(accessGroup)")
-                            } else {
-                                DDLogDebug("Failed to delete keychain item: \(delStatus)")
                             }
                         }
                     }
                 }
-            } else if status != errSecItemNotFound {
-                DDLogError("Failed to query keychain class \(secClass): \(status)")
             }
         }
-        return success
+        return anySuccess
     }
 }
