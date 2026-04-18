@@ -22,11 +22,11 @@ struct TrollFoolsApp: SwiftUI.App {
             BackgroundTaskService.shared.scheduleAppRefresh()
         }
         
-        // 启动后台自动注入监控服务
+        // 启动后台自动注入监控服务（不自动杀死前台应用）
         AutoInjectService.shared.startMonitoring()
         
-        // 启动自动恢复服务（应用更新后自动启用插件）
-        AutoResumeService.shared.checkAndResumePlugIns()
+        // 启动自动恢复服务（应用更新后自动启用插件，但不杀死前台应用）
+        AutoResumeService.shared.forceCheck()  // 立即执行一次检查
     }
 
     var body: some Scene {
@@ -49,6 +49,12 @@ struct TrollFoolsApp: SwiftUI.App {
                 if let userInfo = notification.userInfo,
                    let count = userInfo["count"] as? Int {
                     DDLogInfo("Auto resumed \(count) plugins")
+                }
+            }
+            // 当应用进入前台时，再次触发自动恢复（确保及时）
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                DispatchQueue.main.async {
+                    AutoResumeService.shared.forceCheck()
                 }
             }
         }
