@@ -496,7 +496,15 @@ struct AppListView: View {
             : "搜索…")
     }
 
-    // MARK: - 批量操作（只统计实际状态发生变化的应用）
+    // MARK: - 安全刷新（避免 KVO 崩溃）
+    private func safeReload() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
+            appList.objectWillChange.send()
+            appList.reload()
+        }
+    }
+
+    // MARK: - 批量操作（安全版，显示实际状态变化的应用数）
     private func batchEnableAll() {
         let allApps = appList.allSupportedApps
         guard !allApps.isEmpty else { return }
@@ -518,9 +526,9 @@ struct AppListView: View {
     private func performBatchOperation(on apps: [App], enable: Bool) {
         isBatchProcessing = true
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            var successCount = 0          // 成功执行操作的应用数（无异常）
-            var changedCount = 0          // 实际状态发生变化的应用数
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            var successCount = 0
+            var changedCount = 0
             var failCount = 0
             let totalCount = apps.count
 
@@ -555,7 +563,7 @@ struct AppListView: View {
                 }
             }
 
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [self] in
                 self.isBatchProcessing = false
                 if failCount == 0 {
                     self.batchResultMessage = enable
@@ -564,7 +572,7 @@ struct AppListView: View {
                 } else {
                     self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个（共 \(totalCount) 个应用）。其中 \(changedCount) 个应用状态实际发生变化。"
                 }
-                self.appList.reload()
+                self.safeReload()
             }
         }
     }
@@ -572,7 +580,7 @@ struct AppListView: View {
     private func performBatchRemove(on apps: [App]) {
         isBatchProcessing = true
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
             var successCount = 0
             var changedCount = 0
             var failCount = 0
@@ -594,14 +602,14 @@ struct AppListView: View {
                 }
             }
 
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [self] in
                 self.isBatchProcessing = false
                 if failCount == 0 {
                     self.batchResultMessage = "已成功移除 \(changedCount) 个应用的所有插件（共处理 \(totalCount) 个应用）。"
                 } else {
                     self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个（共 \(totalCount) 个应用）。其中 \(changedCount) 个应用移除了插件。"
                 }
-                self.appList.reload()
+                self.safeReload()
             }
         }
     }
