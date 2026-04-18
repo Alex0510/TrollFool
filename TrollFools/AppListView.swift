@@ -496,7 +496,7 @@ struct AppListView: View {
             : "搜索…")
     }
 
-    // MARK: - 批量操作（安全版本，避免 KVO 崩溃）
+    // MARK: - 批量操作（安全版，显示总应用数与实际操作数）
     private func batchEnableAll() {
         let allApps = appList.allSupportedApps
         guard !allApps.isEmpty else { return }
@@ -521,6 +521,7 @@ struct AppListView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             var successCount = 0
             var failCount = 0
+            let totalCount = apps.count
 
             for app in apps {
                 do {
@@ -548,11 +549,12 @@ struct AppListView: View {
             DispatchQueue.main.async {
                 self.isBatchProcessing = false
                 if failCount == 0 {
-                    self.batchResultMessage = enable ? "已成功启用 \(successCount) 个应用的插件。" : "已成功禁用 \(successCount) 个应用的插件。"
+                    self.batchResultMessage = enable
+                        ? "已成功启用 \(successCount) 个应用的插件（共 \(totalCount) 个应用）。"
+                        : "已成功禁用 \(successCount) 个应用的插件（共 \(totalCount) 个应用）。"
                 } else {
-                    self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个。"
+                    self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个（共 \(totalCount) 个应用）。"
                 }
-                // 统一重建整个列表，避免逐个刷新引起的 KVO 问题
                 self.appList.reload()
             }
         }
@@ -564,12 +566,12 @@ struct AppListView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             var successCount = 0
             var failCount = 0
+            let totalCount = apps.count
 
             for app in apps {
                 do {
                     let injector = try InjectorV3(app.url)
                     try injector.ejectAll(shouldDesist: true)
-                    // 移除自动恢复状态
                     AutoResumeService.shared.removeEnabledPlugIns(for: app)
                     successCount += 1
                 } catch {
@@ -581,9 +583,9 @@ struct AppListView: View {
             DispatchQueue.main.async {
                 self.isBatchProcessing = false
                 if failCount == 0 {
-                    self.batchResultMessage = "已成功移除 \(successCount) 个应用的所有插件。"
+                    self.batchResultMessage = "已成功移除 \(successCount) 个应用的所有插件（共 \(totalCount) 个应用）。"
                 } else {
-                    self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个。"
+                    self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个（共 \(totalCount) 个应用）。"
                 }
                 self.appList.reload()
             }
