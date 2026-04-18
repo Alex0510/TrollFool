@@ -129,10 +129,13 @@ struct AppListView: View {
                 selectorOpenedURL = urlIdent
             }
             .onAppear {
-                CheckUpdateManager.shared.checkUpdateIfNeeded { latestVersion, _ in
-                    DispatchQueue.main.async {
-                        withAnimation {
-                            latestVersionString = latestVersion?.tagName
+                // 延迟 0.5 秒刷新，避免干扰画中画
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    CheckUpdateManager.shared.checkUpdateIfNeeded { latestVersion, _ in
+                        DispatchQueue.main.async {
+                            withAnimation {
+                                latestVersionString = latestVersion?.tagName
+                            }
                         }
                     }
                 }
@@ -495,7 +498,7 @@ struct AppListView: View {
             : "搜索…")
     }
 
-    // MARK: - 批量操作
+    // MARK: - 批量操作（修正闪退）
 
     private func batchEnableAll() {
         let allApps = appList.allSupportedApps
@@ -517,8 +520,11 @@ struct AppListView: View {
 
     private func performBatchOperation(on apps: [App], enable: Bool) {
         isBatchProcessing = true
+        // 禁用用户交互，防止操作中刷新列表导致 KVO 崩溃
+        UIApplication.shared.beginIgnoringInteractionEvents()
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
             var successCount = 0
             var failCount = 0
 
@@ -544,11 +550,10 @@ struct AppListView: View {
                     }
 
                     if didSomething {
-                        DispatchQueue.main.async {
+                        DispatchQueue.main.async { [weak self] in
                             app.reload()
-                            // 保存该应用的所有已启用插件状态
-                            let enabledURLs = InjectorV3.main.injectedAssetURLsInBundle(app.url)
-                            AutoResumeService.shared.saveEnabledPlugIns(for: app, enabledURLs: enabledURLs)
+                            // 只通知列表有变化，避免全量刷新
+                            self?.appList.objectWillChange.send()
                         }
                         successCount += 1
                     }
@@ -558,26 +563,27 @@ struct AppListView: View {
                 }
             }
 
-            DispatchQueue.main.async {
-                isBatchProcessing = false
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.isBatchProcessing = false
+                UIApplication.shared.endIgnoringInteractionEvents()
                 if failCount == 0 {
-                    if enable {
-                        batchResultMessage = "已成功启用 \(successCount) 个应用的插件。"
-                    } else {
-                        batchResultMessage = "已成功禁用 \(successCount) 个应用的插件。"
-                    }
+                    self.batchResultMessage = enable ? "已成功启用 \(successCount) 个应用的插件。" : "已成功禁用 \(successCount) 个应用的插件。"
                 } else {
-                    batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个。"
+                    self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个。"
                 }
-                appList.reload()
+                // 最后再刷新整个列表（确保一致性）
+                self.appList.reload()
             }
         }
     }
 
     private func performBatchRemove(on apps: [App]) {
         isBatchProcessing = true
+        UIApplication.shared.beginIgnoringInteractionEvents()
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
             var successCount = 0
             var failCount = 0
 
@@ -596,14 +602,16 @@ struct AppListView: View {
                 }
             }
 
-            DispatchQueue.main.async {
-                isBatchProcessing = false
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.isBatchProcessing = false
+                UIApplication.shared.endIgnoringInteractionEvents()
                 if failCount == 0 {
-                    batchResultMessage = "已成功移除 \(successCount) 个应用的所有插件。"
+                    self.batchResultMessage = "已成功移除 \(successCount) 个应用的所有插件。"
                 } else {
-                    batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个。"
+                    self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个。"
                 }
-                appList.reload()
+                self.appList.reload()
             }
         }
     }
@@ -614,7 +622,7 @@ struct URLIdentifiable: Identifiable {
     var id: String { url.absoluteString }
 }
 
-// MARK: - 不支持的应用详情页
+// MARK: - 不支持的应用详情页（带图标）
 struct UnsupportedAppsView: View {
     let unsupportedApps: [App]
     @Environment(\.presentationMode) var presentationMode
