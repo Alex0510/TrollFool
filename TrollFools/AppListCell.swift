@@ -139,10 +139,20 @@ struct AppListCell: View {
         }
 
         if app.dataContainerURL != nil || app.appGroupContainerURL != nil {
-            Button(role: .destructive) {
-                confirmCleanData()
-            } label: {
-                Label("彻底清理 (数据+Keychain)", systemImage: "trash.slash")
+            // iOS 14 兼容：不使用 role 参数
+            if #available(iOS 15, *) {
+                Button(role: .destructive) {
+                    confirmCleanData()
+                } label: {
+                    Label("彻底清理 (数据+Keychain)", systemImage: "trash.slash")
+                }
+            } else {
+                Button {
+                    confirmCleanData()
+                } label: {
+                    Label("彻底清理 (数据+Keychain)", systemImage: "trash.slash")
+                        .foregroundColor(.red)
+                }
             }
         }
     }
