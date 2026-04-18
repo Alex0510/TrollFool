@@ -504,7 +504,7 @@ struct AppListView: View {
         }
     }
 
-    // MARK: - 批量操作（安全版，显示实际状态变化的应用数）
+    // MARK: - 批量操作（安全版，显示实际状态变化的应用数，并同步自动恢复状态）
     private func batchEnableAll() {
         let allApps = appList.allSupportedApps
         guard !allApps.isEmpty else { return }
@@ -555,6 +555,14 @@ struct AppListView: View {
 
                     if didChange {
                         changedCount += 1
+                        // 更新自动恢复服务中的保存状态
+                        if enable {
+                            let enabledURLs = InjectorV3.main.injectedAssetURLsInBundle(app.url)
+                            AutoResumeService.shared.saveEnabledPlugIns(for: app, enabledURLs: enabledURLs)
+                        } else {
+                            // 禁用所有插件后，清除保存的状态
+                            AutoResumeService.shared.removeEnabledPlugIns(for: app)
+                        }
                     }
                     successCount += 1
                 } catch {
@@ -591,6 +599,7 @@ struct AppListView: View {
                     let injector = try InjectorV3(app.url)
                     let hadPlugins = !InjectorV3.main.injectedAssetURLsInBundle(app.url).isEmpty
                     try injector.ejectAll(shouldDesist: true)
+                    // 移除自动恢复状态
                     AutoResumeService.shared.removeEnabledPlugIns(for: app)
                     if hadPlugins {
                         changedCount += 1
