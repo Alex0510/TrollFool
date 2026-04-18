@@ -314,6 +314,7 @@ struct AppListView: View {
                 }
             }
         }
+        .disabled(isBatchProcessing) // 批量处理期间禁用整个列表交互
     }
 
     var topSection: some View {
@@ -498,7 +499,7 @@ struct AppListView: View {
             : "搜索…")
     }
 
-    // MARK: - 批量操作（修正闪退）
+    // MARK: - 批量操作（修正闪退，无废弃API，无 weak self 错误）
 
     private func batchEnableAll() {
         let allApps = appList.allSupportedApps
@@ -520,11 +521,8 @@ struct AppListView: View {
 
     private func performBatchOperation(on apps: [App], enable: Bool) {
         isBatchProcessing = true
-        // 禁用用户交互，防止操作中刷新列表导致 KVO 崩溃
-        UIApplication.shared.beginIgnoringInteractionEvents()
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
             var successCount = 0
             var failCount = 0
 
@@ -550,10 +548,10 @@ struct AppListView: View {
                     }
 
                     if didSomething {
-                        DispatchQueue.main.async { [weak self] in
+                        DispatchQueue.main.async { [self] in
                             app.reload()
                             // 只通知列表有变化，避免全量刷新
-                            self?.appList.objectWillChange.send()
+                            self.appList.objectWillChange.send()
                         }
                         successCount += 1
                     }
@@ -563,10 +561,8 @@ struct AppListView: View {
                 }
             }
 
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
+            DispatchQueue.main.async { [self] in
                 self.isBatchProcessing = false
-                UIApplication.shared.endIgnoringInteractionEvents()
                 if failCount == 0 {
                     self.batchResultMessage = enable ? "已成功启用 \(successCount) 个应用的插件。" : "已成功禁用 \(successCount) 个应用的插件。"
                 } else {
@@ -580,10 +576,8 @@ struct AppListView: View {
 
     private func performBatchRemove(on apps: [App]) {
         isBatchProcessing = true
-        UIApplication.shared.beginIgnoringInteractionEvents()
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
             var successCount = 0
             var failCount = 0
 
@@ -602,10 +596,8 @@ struct AppListView: View {
                 }
             }
 
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
+            DispatchQueue.main.async { [self] in
                 self.isBatchProcessing = false
-                UIApplication.shared.endIgnoringInteractionEvents()
                 if failCount == 0 {
                     self.batchResultMessage = "已成功移除 \(successCount) 个应用的所有插件。"
                 } else {
