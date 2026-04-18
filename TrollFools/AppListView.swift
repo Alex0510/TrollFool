@@ -496,7 +496,7 @@ struct AppListView: View {
             : "搜索…")
     }
 
-    // MARK: - 批量操作（安全版，显示总应用数与实际操作数）
+    // MARK: - 批量操作（只统计实际状态发生变化的应用）
     private func batchEnableAll() {
         let allApps = appList.allSupportedApps
         guard !allApps.isEmpty else { return }
@@ -519,25 +519,34 @@ struct AppListView: View {
         isBatchProcessing = true
 
         DispatchQueue.global(qos: .userInitiated).async {
-            var successCount = 0
+            var successCount = 0          // 成功执行操作的应用数（无异常）
+            var changedCount = 0          // 实际状态发生变化的应用数
             var failCount = 0
             let totalCount = apps.count
 
             for app in apps {
                 do {
                     let injector = try InjectorV3(app.url)
+                    var didChange = false
+
                     if enable {
                         let persistedURLs = InjectorV3.main.persistedAssetURLs(bid: app.bid)
                         let injectedURLs = InjectorV3.main.injectedAssetURLsInBundle(app.url)
                         let toInject = persistedURLs.filter { !injectedURLs.contains($0) }
                         if !toInject.isEmpty {
                             try injector.inject(toInject, shouldPersist: false)
+                            didChange = true
                         }
                     } else {
                         let injectedURLs = InjectorV3.main.injectedAssetURLsInBundle(app.url)
                         if !injectedURLs.isEmpty {
                             try injector.ejectAll(shouldDesist: false)
+                            didChange = true
                         }
+                    }
+
+                    if didChange {
+                        changedCount += 1
                     }
                     successCount += 1
                 } catch {
@@ -550,10 +559,10 @@ struct AppListView: View {
                 self.isBatchProcessing = false
                 if failCount == 0 {
                     self.batchResultMessage = enable
-                        ? "已成功启用 \(successCount) 个应用的插件（共 \(totalCount) 个应用）。"
-                        : "已成功禁用 \(successCount) 个应用的插件（共 \(totalCount) 个应用）。"
+                        ? "已成功启用 \(changedCount) 个应用的插件（共处理 \(totalCount) 个应用）。"
+                        : "已成功禁用 \(changedCount) 个应用的插件（共处理 \(totalCount) 个应用）。"
                 } else {
-                    self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个（共 \(totalCount) 个应用）。"
+                    self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个（共 \(totalCount) 个应用）。其中 \(changedCount) 个应用状态实际发生变化。"
                 }
                 self.appList.reload()
             }
@@ -565,14 +574,19 @@ struct AppListView: View {
 
         DispatchQueue.global(qos: .userInitiated).async {
             var successCount = 0
+            var changedCount = 0
             var failCount = 0
             let totalCount = apps.count
 
             for app in apps {
                 do {
                     let injector = try InjectorV3(app.url)
+                    let hadPlugins = !InjectorV3.main.injectedAssetURLsInBundle(app.url).isEmpty
                     try injector.ejectAll(shouldDesist: true)
                     AutoResumeService.shared.removeEnabledPlugIns(for: app)
+                    if hadPlugins {
+                        changedCount += 1
+                    }
                     successCount += 1
                 } catch {
                     DDLogError("Batch remove failed for \(app.bid): \(error)")
@@ -583,9 +597,9 @@ struct AppListView: View {
             DispatchQueue.main.async {
                 self.isBatchProcessing = false
                 if failCount == 0 {
-                    self.batchResultMessage = "已成功移除 \(successCount) 个应用的所有插件（共 \(totalCount) 个应用）。"
+                    self.batchResultMessage = "已成功移除 \(changedCount) 个应用的所有插件（共处理 \(totalCount) 个应用）。"
                 } else {
-                    self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个（共 \(totalCount) 个应用）。"
+                    self.batchResultMessage = "完成，成功 \(successCount) 个，失败 \(failCount) 个（共 \(totalCount) 个应用）。其中 \(changedCount) 个应用移除了插件。"
                 }
                 self.appList.reload()
             }
