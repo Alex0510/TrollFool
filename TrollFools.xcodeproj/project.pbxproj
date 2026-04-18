@@ -7,9 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3205508F2F9393A00011258B /* InjectorV3+Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3205508E2F93939E0011258B /* InjectorV3+Keychain.swift */; };
+		320550912F9393EB0011258B /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 320550902F9393EB0011258B /* libsqlite3.tbd */; };
 		321241A92F8FDCF0003E10D8 /* AutoInjectService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321241A82F8FDCE7003E10D8 /* AutoInjectService.swift */; };
 		321241AB2F8FE56F003E10D8 /* BackgroundTaskService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321241AA2F8FE56D003E10D8 /* BackgroundTaskService.swift */; };
-		3230EA2F2F92818D007A3C33 /* AutoResumeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3230EA2E2F92818D007A3C33 /* AutoResumeService.swift */; };
 		6124A06D2CD2322400C52253 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6124A06C2CD2322400C52253 /* App.swift */; };
 		6124A06F2CD2324200C52253 /* AppListModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6124A06E2CD2324200C52253 /* AppListModel.swift */; };
 		6124A0712CD2326500C52253 /* FilterOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6124A0702CD2326500C52253 /* FilterOptions.swift */; };
@@ -145,9 +146,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		3205508E2F93939E0011258B /* InjectorV3+Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "InjectorV3+Keychain.swift"; sourceTree = "<group>"; };
+		320550902F9393EB0011258B /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		321241A82F8FDCE7003E10D8 /* AutoInjectService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoInjectService.swift; sourceTree = "<group>"; };
 		321241AA2F8FE56D003E10D8 /* BackgroundTaskService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTaskService.swift; sourceTree = "<group>"; };
-		3230EA2E2F92818D007A3C33 /* AutoResumeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoResumeService.swift; sourceTree = "<group>"; };
 		6124A06C2CD2322400C52253 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		6124A06E2CD2324200C52253 /* AppListModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppListModel.swift; sourceTree = "<group>"; };
 		6124A0702CD2326500C52253 /* FilterOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterOptions.swift; sourceTree = "<group>"; };
@@ -261,6 +263,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				320550912F9393EB0011258B /* libsqlite3.tbd in Frameworks */,
 				61EFA3672D3026D400159442 /* CocoaLumberjack in Frameworks */,
 				CC0D662D2D7F11A2000EADED /* ArArchiveKit in Frameworks */,
 				61946B262D2FD8AB009E0AC4 /* OrderedCollections in Frameworks */,
@@ -415,6 +418,7 @@
 		CCB6A1152C4A540E000D75B0 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				320550902F9393EB0011258B /* libsqlite3.tbd */,
 				CCB6A1162C4A540F000D75B0 /* CoreServices.framework */,
 			);
 			name = Frameworks;
@@ -441,7 +445,7 @@
 		CCF470582C4A4649008D8197 /* TrollFools */ = {
 			isa = PBXGroup;
 			children = (
-				3230EA2E2F92818D007A3C33 /* AutoResumeService.swift */,
+				3205508E2F93939E0011258B /* InjectorV3+Keychain.swift */,
 				321241AA2F8FE56D003E10D8 /* BackgroundTaskService.swift */,
 				321241A82F8FDCE7003E10D8 /* AutoInjectService.swift */,
 				CC60FBEB2CC50F5A00A6D21A /* BartyCrouch.swift */,
@@ -680,6 +684,7 @@
 				CC80616E2E71632E00B1AA3E /* CodableStorage.swift in Sources */,
 				CCD3FCB92E70949700AEF7F0 /* InjectorV3+Persistent.swift in Sources */,
 				614C0C6A2D7CB458007E9184 /* Hashable+Combines.swift in Sources */,
+				3205508F2F9393A00011258B /* InjectorV3+Keychain.swift in Sources */,
 				6124A0712CD2326500C52253 /* FilterOptions.swift in Sources */,
 				61EFA3792D3108BD00159442 /* InjectorV3+Eject.swift in Sources */,
 				6124A07B2CD2337500C52253 /* ViewControllerHost.swift in Sources */,
@@ -696,7 +701,6 @@
 				61EFA3712D3033BB00159442 /* InjectorV3+Error.swift in Sources */,
 				6124A06F2CD2324200C52253 /* AppListModel.swift in Sources */,
 				CCB6A1192C4A58C7000D75B0 /* OptionView.swift in Sources */,
-				3230EA2F2F92818D007A3C33 /* AutoResumeService.swift in Sources */,
 				CCF4706E2C4A4BAB008D8197 /* AppListView.swift in Sources */,
 				321241A92F8FDCF0003E10D8 /* AutoInjectService.swift in Sources */,
 				614C0C6C2D7D72D4007E9184 /* IndexableScroller.swift in Sources */,
