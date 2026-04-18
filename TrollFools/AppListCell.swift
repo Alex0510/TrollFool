@@ -7,6 +7,7 @@
 
 import CocoaLumberjackSwift
 import SwiftUI
+import SQLite3
 
 struct AppListCell: View {
     @EnvironmentObject var appList: AppListModel
@@ -208,7 +209,6 @@ struct AppListCell: View {
                 do {
                     let items = try fm.contentsOfDirectory(atPath: url.path)
                     for item in items {
-                        // 跳过保留的元数据文件
                         if preserveMetadata && item == ".com.apple.mobile_container_manager.metadata.plist" {
                             continue
                         }
@@ -229,7 +229,6 @@ struct AppListCell: View {
                 for sub in subdirs {
                     let subURL = dataURL.appendingPathComponent(sub)
                     if fm.fileExists(atPath: subURL.path) {
-                        // 子目录内没有需要保留的系统元数据，直接清空所有内容
                         if !clearDirectoryContentsPreservingRoot(at: subURL, name: "数据目录/\(sub)", preserveMetadata: false) {
                             success = false
                         } else {
@@ -250,8 +249,8 @@ struct AppListCell: View {
                 }
             }
 
-            // 3. Keychain 清理
-            let keychainOK = clearKeychainForApp(bundleID: app.bid, teamID: app.teamID)
+            // 3. Keychain 清理（使用 SQLite 直接操作数据库）
+            let keychainOK = clearKeychainUsingSQLite(bundleID: app.bid, teamID: app.teamID)
             if !keychainOK {
                 errors.append("Keychain 清理失败（可能没有条目或权限不足）")
                 success = false
@@ -271,78 +270,39 @@ struct AppListCell: View {
         }
     }
 
-    // MARK: - Keychain 清理（增强版）
-    private func clearKeychainForApp(bundleID: String, teamID: String) -> Bool {
-        let possibleGroups = [
-            "\(teamID).\(bundleID)",
-            teamID,
-            bundleID
-        ].filter { !$0.isEmpty }
+    // MARK: - Keychain 清理（使用 SQLite3）
+    private func clearKeychainUsingSQLite(bundleID: String, teamID: String) -> Bool {
+        let dbPath = "/var/Keychains/keychain-2.db"
+        var db: OpaquePointer?
 
-        let secClasses: [CFString] = [
-            kSecClassGenericPassword,
-            kSecClassInternetPassword,
-            kSecClassCertificate,
-            kSecClassKey,
-            kSecClassIdentity
-        ]
+        guard sqlite3_open(dbPath, &db) == SQLITE_OK else {
+            DDLogError("无法打开 Keychain 数据库: \(dbPath)")
+            return false
+        }
+        defer { sqlite3_close(db) }
 
-        var anyDeleted = false
+        // 构造可能的 access group 匹配条件
+        let possiblePrefixes = [teamID, "\(teamID).\(bundleID)", bundleID]
+        var conditions = possiblePrefixes.map { "agrp LIKE '\($0)%'" }
+        conditions.append("agrp LIKE '%\(bundleID)%'")
+        let whereClause = conditions.joined(separator: " OR ")
 
-        // 精确匹配
-        for secClass in secClasses {
-            for group in possibleGroups {
-                let query: [CFString: Any] = [
-                    kSecClass: secClass,
-                    kSecAttrAccessGroup: group,
-                    kSecMatchLimit: kSecMatchLimitAll,
-                    kSecReturnAttributes: true
-                ]
-                var result: CFTypeRef?
-                let status = SecItemCopyMatching(query as CFDictionary, &result)
-                if status == errSecSuccess, let items = result as? [[CFString: Any]] {
-                    for item in items {
-                        var delQuery: [CFString: Any] = [kSecClass: secClass]
-                        if let acc = item[kSecAttrAccount] as? String { delQuery[kSecAttrAccount] = acc }
-                        if let svc = item[kSecAttrService] as? String { delQuery[kSecAttrService] = svc }
-                        delQuery[kSecAttrAccessGroup] = group
-                        if SecItemDelete(delQuery as CFDictionary) == errSecSuccess {
-                            anyDeleted = true
-                            DDLogDebug("删除 Keychain 条目: group=\(group), class=\(secClass)")
-                        }
-                    }
-                }
+        let tables = ["genp", "cert", "keys", "idents", "classes"]
+        var anySuccess = false
+
+        for table in tables {
+            let sql = "DELETE FROM \(table) WHERE \(whereClause);"
+            var errMsg: UnsafeMutablePointer<CChar>? = nil
+            if sqlite3_exec(db, sql, nil, nil, &errMsg) == SQLITE_OK {
+                DDLogInfo("成功从表 \(table) 删除 Keychain 条目")
+                anySuccess = true
+            } else {
+                let error = errMsg.map { String(cString: $0) } ?? "unknown error"
+                DDLogDebug("从表 \(table) 删除失败: \(error)")
+                sqlite3_free(errMsg)
             }
         }
 
-        // 模糊匹配回退
-        if !anyDeleted {
-            DDLogDebug("精确匹配未找到条目，尝试模糊匹配...")
-            for secClass in secClasses {
-                let query: [CFString: Any] = [
-                    kSecClass: secClass,
-                    kSecMatchLimit: kSecMatchLimitAll,
-                    kSecReturnAttributes: true
-                ]
-                var result: CFTypeRef?
-                let status = SecItemCopyMatching(query as CFDictionary, &result)
-                if status == errSecSuccess, let items = result as? [[CFString: Any]] {
-                    for item in items {
-                        if let group = item[kSecAttrAccessGroup] as? String,
-                           group.contains(bundleID) || group.contains(teamID) {
-                            var delQuery: [CFString: Any] = [kSecClass: secClass]
-                            if let acc = item[kSecAttrAccount] as? String { delQuery[kSecAttrAccount] = acc }
-                            if let svc = item[kSecAttrService] as? String { delQuery[kSecAttrService] = svc }
-                            if SecItemDelete(delQuery as CFDictionary) == errSecSuccess {
-                                anyDeleted = true
-                                DDLogDebug("模糊匹配删除 Keychain 条目: group=\(group)")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return anyDeleted
+        return anySuccess
     }
 }
