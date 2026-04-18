@@ -7,7 +7,6 @@
 
 import CocoaLumberjackSwift
 import SwiftUI
-import Darwin
 
 struct AppListCell: View {
     @EnvironmentObject var appList: AppListModel
@@ -306,7 +305,7 @@ struct AppListCell: View {
         }
     }
 
-    // 清除指定应用的 Keychain 条目（使用 posix_spawn 以 root 权限执行 sqlite3）
+    // 清除指定应用的 Keychain 条目（使用 AuxiliaryExecute.spawn 以 root 权限执行 sqlite3）
     private func clearKeychainForApp(bundleID: String, teamID: String) -> Bool {
         // 构造可能的 access group 前缀
         let possiblePrefixes = [teamID, "\(teamID).\(bundleID)", teamID.components(separatedBy: ".").first ?? teamID]
@@ -318,43 +317,23 @@ struct AppListCell: View {
         let sql = "DELETE FROM genp WHERE \(conditions);"
         let dbPath = "/var/Keychains/keychain-2.db"
         
-        // 使用 posix_spawn 以 root 身份执行 sqlite3
-        let result = spawnRoot(command: "/usr/bin/sqlite3", arguments: [dbPath, sql])
+        // 使用 AuxiliaryExecute.spawn 执行命令（以 root 权限，通过 personaOptions uid=0, gid=0）
+        let receipt = AuxiliaryExecute.spawn(
+            command: "/usr/bin/sqlite3",
+            args: [dbPath, sql],
+            environment: [:],
+            workingDirectory: nil,
+            personaOptions: AuxiliaryExecute.PersonaOptions(uid: 0, gid: 0),
+            timeout: 10,
+            ddlog: InjectorV3.main.logger
+        )
         
-        if result == 0 {
+        if case .exit(0) = receipt.terminationReason {
             DDLogInfo("Keychain cleared for \(bundleID)")
             return true
         } else {
-            DDLogError("Failed to clear keychain for \(bundleID): exit code \(result)")
+            DDLogError("Failed to clear keychain for \(bundleID): exit code: \(receipt.terminationReason), stderr: \(receipt.stderr)")
             return false
-        }
-    }
-    
-    // 使用 posix_spawn 以 root 权限执行命令（需要 TrollStore 的 root 权限）
-    private func spawnRoot(command: String, arguments: [String]) -> Int32 {
-        var pid: pid_t = 0
-        var fileActions: posix_spawn_file_actions_t?
-        posix_spawn_file_actions_init(&fileActions)
-        
-        // 继承标准输入输出
-        posix_spawn_file_actions_adddup2(fileActions, STDOUT_FILENO, STDOUT_FILENO)
-        posix_spawn_file_actions_adddup2(fileActions, STDERR_FILENO, STDERR_FILENO)
-        
-        var args = [command] + arguments
-        let argv: [UnsafeMutablePointer<CChar>?] = args.map { $0.withCString(strdup) }
-        defer { for ptr in argv { free(ptr) } }
-        
-        let env: [UnsafeMutablePointer<CChar>?] = [nil]
-        
-        let status = posix_spawn(&pid, command, &fileActions, nil, argv, env)
-        posix_spawn_file_actions_destroy(&fileActions)
-        
-        if status == 0 {
-            var waitStatus: Int32 = 0
-            waitpid(pid, &waitStatus, 0)
-            return waitStatus
-        } else {
-            return status
         }
     }
 }
